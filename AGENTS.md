@@ -1,10 +1,10 @@
 # AGENTS.md
 
-## Project: ESP32 FV Dashboard (Captive Portal + WebSocket)
+## Project: ESP32 FV Dashboard (Web UI + WebSocket)
 
 ### Purpose
-This project implements an ESP32-based Wi-Fi Access Point with a captive portal
-that serves a web dashboard showing live photovoltaic inverter data.
+This project implements an ESP32-based Wi‑Fi Access Point that serves a web
+dashboard showing live photovoltaic inverter data.
 
 Current state:
 - Data are **mocked**
@@ -24,7 +24,7 @@ Browser (HTML + JS)
         |
         |  WebSocket (JSON)
         v
-ESP32 (AP mode, captive portal)
+ESP32 (AP mode)
         |
         |  (future)
         v
@@ -34,8 +34,7 @@ Solar inverter / battery (Modbus, UART, TCP...)
 
 ## Components
 - WiFi AP (ESP32 in WIFI_AP mode)
-- Captive portal (DNS hijack + HTTP redirect)
-- HTTP server (port 80, serves HTML)
+ - HTTP server (port 80, serves HTML)
 - WebSocket server (port 81, JSON protocol)
 - Frontend: plain HTML/CSS/JS
 

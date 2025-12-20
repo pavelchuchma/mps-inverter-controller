@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
-#include <DNSServer.h>
+#include <ESPmDNS.h>
 #include <WebSocketsServer.h>
 #include <ArduinoJson.h>
 #include <cmath>
@@ -12,7 +12,6 @@ const char* AP_PASS = "12345678";
 IPAddress apIP(192,168,4,1);
 IPAddress netMsk(255,255,255,0);
 
-DNSServer dnsServer;
 WebServer server(80);
 WebSocketsServer ws(81);
 
@@ -176,7 +175,7 @@ void wsEvent(uint8_t clientId, WStype_t type, uint8_t * payload, size_t length) 
   }
 }
 
-// --------- Captive portal HTML (extracted into separate header) ----------
+// --------- Embedded web UI HTML (extracted into separate header) ----------
 #include "index_html.h"
 
 // --------- HTTP handlers ----------
@@ -188,8 +187,7 @@ void handleRoot() {
 }
 
 void handleNotFound() {
-  server.sendHeader("Location", String("http://") + apIP.toString() + "/", true);
-  server.send(302, "text/plain", "");
+  server.send(404, "text/plain", "Not found");
 }
 
 void setup() {
@@ -199,17 +197,14 @@ void setup() {
   WiFi.softAPConfig(apIP, apIP, netMsk);
   WiFi.softAP(AP_SSID, AP_PASS);
 
-  dnsServer.start(53, "*", apIP);
+  // Advertise mDNS name `inverter.local` so clients can reach the device
+  if (!MDNS.begin("inverter")) {
+    Serial.println("mDNS start failed");
+  } else {
+    Serial.println("mDNS responder started: inverter.local");
+  }
 
   server.on("/", HTTP_GET, handleRoot);
-
-  // Captive portal helper endpoints (improves auto-open on OSes)
-  server.on("/generate_204", HTTP_GET, handleRoot);
-  server.on("/gen_204", HTTP_GET, handleRoot);
-  server.on("/hotspot-detect.html", HTTP_GET, handleRoot);
-  server.on("/success.txt", HTTP_GET, handleRoot);
-  server.on("/ncsi.txt", HTTP_GET, handleRoot);
-  server.on("/connecttest.txt", HTTP_GET, handleRoot);
 
   server.onNotFound(handleNotFound);
   server.begin();
@@ -225,7 +220,6 @@ uint32_t lastMock = 0;
 uint32_t lastPush = 0;
 
 void loop() {
-  dnsServer.processNextRequest();
   server.handleClient();
   ws.loop();
 
