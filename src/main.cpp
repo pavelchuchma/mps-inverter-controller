@@ -59,7 +59,7 @@ void updateMock() {
 
 // --------- JSON helpers ----------
 String makeStatusJson() {
-  StaticJsonDocument<256> doc;
+  DynamicJsonDocument doc(256);
   doc["type"] = "status";
   doc["pv_w"] = (int)round(g.pv_w);
   doc["batt_soc"] = g.batt_soc;
@@ -79,7 +79,7 @@ String makeStatusJson() {
 }
 
 String makeAckJson(const char* msg) {
-  StaticJsonDocument<160> doc;
+  DynamicJsonDocument doc(160);
   doc["type"] = "ack";
   doc["ok"] = true;
   doc["msg"] = msg;
@@ -89,7 +89,7 @@ String makeAckJson(const char* msg) {
 }
 
 String makeErrJson(const char* code, const char* msg) {
-  StaticJsonDocument<200> doc;
+  DynamicJsonDocument doc(200);
   doc["type"] = "err";
   doc["ok"] = false;
   doc["code"] = code;
@@ -112,14 +112,14 @@ String handleCommand(JsonDocument& doc) {
 
   // Example command: set_demo (bool)
   if (strcmp(name, "set_demo") == 0) {
-    if (!doc.containsKey("value")) return makeErrJson("bad_request", "Missing 'value'");
+    if (doc["value"].isNull()) return makeErrJson("bad_request", "Missing 'value'");
     demoMode = doc["value"].as<bool>();
     return makeAckJson(demoMode ? "demo enabled" : "demo disabled");
   }
 
   // Example command: set_output_limit_w (int)
   if (strcmp(name, "set_output_limit_w") == 0) {
-    if (!doc.containsKey("value")) return makeErrJson("bad_request", "Missing 'value'");
+    if (doc["value"].isNull()) return makeErrJson("bad_request", "Missing 'value'");
     int v = doc["value"].as<int>();
     if (v < 0 || v > 10000) return makeErrJson("range", "output_limit_w out of range");
     outputLimitW = v;
@@ -143,9 +143,9 @@ void wsEvent(uint8_t clientId, WStype_t type, uint8_t * payload, size_t length) 
       break;
 
     case WStype_TEXT: {
-      // Parse incoming JSON
-      StaticJsonDocument<512> doc;
-      DeserializationError err = deserializeJson(doc, payload, length);
+        // Parse incoming JSON
+        DynamicJsonDocument doc(512);
+        DeserializationError err = deserializeJson(doc, payload, length);
       if (err) {
         wsSend(clientId, makeErrJson("json_parse", err.c_str()));
         return;
