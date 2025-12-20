@@ -1,8 +1,10 @@
+#include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
 #include <DNSServer.h>
 #include <WebSocketsServer.h>
 #include <ArduinoJson.h>
+#include <cmath>
 
 const char* AP_SSID = "FV-Dashboard";
 const char* AP_PASS = "12345678";
@@ -13,6 +15,15 @@ IPAddress netMsk(255,255,255,0);
 DNSServer dnsServer;
 WebServer server(80);
 WebSocketsServer ws(81);
+
+// WS helpers: accept by-value so callers can pass rvalues (makeStatusJson())
+static inline void wsSend(uint8_t clientId, String s) {
+  ws.sendTXT(clientId, s);
+}
+
+static inline void wsBroadcastTxt(String s) {
+  ws.broadcastTXT(s);
+}
 
 // --------- App state ----------
 struct Status {
@@ -90,7 +101,7 @@ String makeErrJson(const char* code, const char* msg) {
 
 // --------- WebSocket broadcast ----------
 void wsBroadcastStatus() {
-  ws.broadcastTXT(makeStatusJson());
+  wsBroadcastTxt(makeStatusJson());
 }
 
 // --------- Command handling ----------
@@ -124,7 +135,7 @@ void wsEvent(uint8_t clientId, WStype_t type, uint8_t * payload, size_t length) 
     case WStype_CONNECTED: {
       IPAddress ip = ws.remoteIP(clientId);
       Serial.printf("[WS] Client %u connected from %s\n", clientId, ip.toString().c_str());
-      ws.sendTXT(clientId, makeStatusJson());
+      wsSend(clientId, makeStatusJson());
       break;
     }
     case WStype_DISCONNECTED:
@@ -136,27 +147,27 @@ void wsEvent(uint8_t clientId, WStype_t type, uint8_t * payload, size_t length) 
       StaticJsonDocument<512> doc;
       DeserializationError err = deserializeJson(doc, payload, length);
       if (err) {
-        ws.sendTXT(clientId, makeErrJson("json_parse", err.c_str()));
+        wsSend(clientId, makeErrJson("json_parse", err.c_str()));
         return;
       }
 
       const char* msgType = doc["type"] | "";
       if (strcmp(msgType, "hello") == 0) {
-        ws.sendTXT(clientId, makeAckJson("hello"));
-        ws.sendTXT(clientId, makeStatusJson());
+        wsSend(clientId, makeAckJson("hello"));
+        wsSend(clientId, makeStatusJson());
         return;
       }
 
       if (strcmp(msgType, "cmd") == 0) {
         String reply = handleCommand(doc);
-        ws.sendTXT(clientId, reply);
+        wsSend(clientId, reply);
 
         // Optionally push fresh status right after a command
         wsBroadcastStatus();
         return;
       }
 
-      ws.sendTXT(clientId, makeErrJson("bad_request", "Unknown message type"));
+      wsSend(clientId, makeErrJson("bad_request", "Unknown message type"));
       break;
     }
 
