@@ -1,0 +1,577 @@
+PS RS232 COMMUNICATION PROTOCOL – FULL COMMAND/RESPONSE SPEC (AI-READY)
+
+Source: "PS RS232 Communication Protocol" PDF.
+Goal: include ALL commands and ALL documented response formats, in a linear machine-readable form.
+
+============================================================
+1) PHYSICAL LINK + SERIAL SETTINGS
+============================================================
+Interface: RS232 via RJ45-to-DB9 cable.
+
+Serial port:
+- Baud rate: 2400
+- Data bits: 8
+- Parity: N (None)
+- Stop bits: 1
+
+============================================================
+2) GENERIC FRAMING RULES
+============================================================
+
+2.1 Command frame (PC -> device)
+TX frame:
+  <CMD><CRC><CR>
+
+- <CMD> is ASCII command string (examples: "QPIGS", "POP00").
+- <CR> is carriage return 0x0D.
+- <CRC> is CRC-16/XMODEM over <CMD> bytes (ASCII), appended as 2 bytes (device doc shows as <CRC>).
+  NOTE: the vendor examples often describe CRC as 2 bytes; implementations typically send the CRC bytes (not ASCII hex)
+  depending on inverter family. Follow the PDF’s CRC calculator example (CRC-16/XMODEM).
+
+2.2 Response frame (device -> PC)
+RX frame:
+  (<PAYLOAD><CRC><CR>
+
+- Response always begins with '(' (0x28).
+- <CRC> is CRC-16/XMODEM over the bytes from '(' through end of <PAYLOAD>.
+- Error response:
+  (NAK<CR>  (some sections show NAK without CRC, but treat as a normal frame if CRC is present)
+
+============================================================
+3) CRC-16/XMODEM
+============================================================
+CRC type: CRC-16/XMODEM
+- Polynomial: 0x1021
+- Init: 0x0000
+- RefIn/RefOut: false
+- XorOut: 0x0000
+
+============================================================
+4) INQUIRY COMMANDS (READ)
+============================================================
+
+4.1 QPI – Device Protocol ID Inquiry
+TX: QPI<CRC><CR>
+RX: (PI<NN><CRC><CR>
+NN: integer 0..9
+Note: Protocol ID distribution example: 30 = Axpert KS series.
+
+4.2 QID – Device serial number inquiry (<=14 chars)
+TX: QID<CRC><CR>
+RX: (XXXXXXXXXXXXXX<CRC><CR>
+
+4.3 QSID – Device serial number inquiry (length > 14)
+TX: QSID<CRC><CR>
+RX: (NNXXXXXXXXXXXXXXXXXXXX<CRC><CR>
+NN: valid serial length
+X: serial number chars; invalid part padded with '0'; total X count = 20
+
+4.4 QVFW – Main CPU Firmware version inquiry
+TX: QVFW<CRC><CR>
+RX: (VERFW:<NNNNN.NN><CRC><CR>
+N: HEX digit 0..9 or A..F
+Example RX: (VERFW:00123.01<CRC><CR>
+- 00123: firmware series
+- 01: version
+
+4.5 QVFW2 – Another CPU Firmware version inquiry
+TX: QVFW2<CRC><CR>
+RX: (VERFW2:<NNNNN.NN><CRC><CR>
+
+4.6 QPIRI – Device Rating Information inquiry
+TX: QPIRI<CRC><CR>
+RX payload (space-separated, fixed order):
+  (
+  BBB.B  Grid rating voltage [V]
+  CC.C   Grid rating current [A]
+  DDD.D  AC output rating voltage [V]
+  EE.E   AC output rating frequency [Hz]
+  FF.F   AC output rating current [A]
+  HHHH   AC output rating apparent power [VA]
+  IIII   AC output rating active power [W]
+  JJ.J   Battery rating voltage [V]
+  KK.K   Battery re-charge voltage [V] (reserved label in PDF but used)
+  JJ.J   Battery under voltage [V] (reserved label in PDF but used)
+  KK.K   Battery bulk voltage [V] (reserved label in PDF but used)
+  LL.L   Battery float voltage [V] (reserved label in PDF but used)
+  O      Battery type: 0 AGM, 1 Flooded, 2 User
+  PP     Max AC charging current [A] (configurable)
+  QQ0    Current max charging current [A]
+  O      Input voltage range: 0 Appliance, 1 UPS
+  P      Output source priority: 0 Utility first, 1 Solar first, 2 SBU first
+  Q      Charger source priority:
+           For KS series: 0 Utility first, 1 Solar first, 2 Solar+Utility, 3 Only solar
+           For MKS 1K~3K: 0 Utility first, 1 Solar first, 2 Solar+Utility, 3 Only solar
+  R      Parallel max num
+  SS     Machine type: 00 Grid tie, 01 Off Grid, 10 Hybrid
+  T      Topology: 0 transformerless, 1 transformer
+  U      Output mode:
+           00 single machine output
+           01 parallel output
+           02 Phase 1 of 3-phase
+           03 Phase 2 of 3-phase
+           04 Phase 3 of 3-phase
+  VV.V   Battery re-discharge voltage [V]
+  W      PV OK condition for parallel:
+           0 any inverter has PV => PV OK
+           1 all inverters must have PV => PV OK
+  X      PV power balance:
+           0 PV input max current = max charge current
+           1 PV input max power = max charge power + load power
+  )<CRC><CR>
+
+4.7 QFLAG – Device flag status inquiry
+TX: QFLAG<CRC><CR>
+RX: (ExxxDxxx<CRC><CR>
+Meaning: 'E' enable, 'D' disable, x are flag letters.
+Flags (x):
+  A Silence buzzer (enable/disable)
+  B Overload bypass function
+  J Power saving
+  K LCD escape to default page after 1 min timeout
+  U Overload restart
+  V Over temperature restart
+  X Backlight on
+  Y Alarm when primary source interrupt
+  Z Fault code record
+
+4.8 QPIGS – Device general status parameters inquiry
+TX: QPIGS<CRC><CR>
+RX payload (space-separated, fixed order):
+  (
+  BBB.B  Grid voltage [V]
+  CC.C   Grid frequency [Hz]
+  DDD.D  AC output voltage [V]
+  EE.E   AC output frequency [Hz]
+  FFFF   AC output apparent power [VA]
+  GGGG   AC output active power [W]
+  HHH    Output load percent [%] (max of W% or VA%)
+  III    BUS voltage [V]
+  JJ.JJ  Battery voltage [V]
+  KKK    Battery charging current [A]
+  OOO    Battery capacity [%]
+  TTTT   Inverter heat sink temperature [°C] (for Axpert 1~3K: NTC A/D value)
+  EEEE   PV input current for battery [A]
+  UUU.U  PV input voltage [V]
+  WW.WW  Battery voltage from SCC [V]
+  PPPPP  Battery discharge current [A]
+  b7..b0 Device status bits:
+          b7 SBU supported version (1 yes, 0 no)
+          b6 Configuration status (1 changed, 0 unchanged)
+          b5 SCC firmware version (1 updated, 0 unchanged)
+          b4 Load status (0 off, 1 on)
+          b3 reserved / battery voltage steady while charging
+          b2 Charging status on/off
+          b1 SCC charging on/off
+          b0 AC charging on/off
+          b2b1b0 meaning examples:
+            000 do nothing
+            101 charging with AC charge on
+            110 charging with SCC charge on
+            111 charging with SCC and AC
+  QQ     Battery voltage offset for fans on (unit: 10mV)
+  VV     EEPROM version
+  MMMMM  PV charging power [W]
+  b10..b8 Additional status:
+          b10 charging to floating mode flag
+          b9 Switch On
+          b8 reserved
+  )<CRC><CR>
+
+4.9 QPGSn – Parallel Information inquiry (For 4K/5K)
+TX: QPGSn<CRC><CR>   where n indicates which parallel unit index is requested
+RX payload (space-separated, fixed order):
+  (
+  A      parallel num exist: 0 No, 1 Exist
+  BBBBBBBBBBBBBB  Serial number (14 digits)
+  C      Work mode (character; see QMOD codes)
+  DD     Fault code (numeric)
+  EEE.E  Grid voltage [V]
+  FF.FF  Grid frequency [Hz]
+  GGG.G  AC output voltage [V]
+  HH.HH  AC output frequency [Hz]
+  IIII   AC output apparent power [VA]
+  JJJJ   AC output active power [W]
+  KKK    Load percentage [%]
+  LL.L   Battery voltage [V]
+  MMM    Battery charging current [A]
+  NNN    Battery capacity [%]
+  OOO.O  PV input voltage [V]
+  PPP    Total charging current [A]
+  QQQQQ  Total AC output apparent power [VA]
+  RRRRR  Total output active power [W]
+  SSS    Total AC output percentage [%]
+  b7..b0 Inverter status bits:
+          b7 SCC OK (1) / SCC LOSS (0)
+          b6 AC charging (1) / not (0)
+          b5 SCC charging (1) / not (0)
+          b4b3 battery state: 2 open, 1 under, 0 normal
+          b2 line loss (1) / line ok (0)
+          b1 load on (1) / load off (0)
+          b0 configuration changed (1) / unchanged (0)
+  T      Output mode:
+          0 single machine
+          1 parallel
+          2 phase 1 of 3-phase
+          3 phase 2 of 3-phase
+          4 phase 3 of 3-phase
+  U      Charger source priority:
+          0 Utility first
+          1 Solar first
+          2 Solar + Utility
+          3 Solar only
+  VVV    Max charger current [A]
+  WWW    Max charger range [A]
+  ZZ     Max AC charger current [A]
+  XX     PV input current for battery [A]
+  YYY    Battery discharge current [A]
+  )<CRC><CR>
+
+Fault codes referenced by QPGSn:
+01 Fan locked
+02 Over temperature
+03 Battery voltage too high
+04 Battery voltage too low
+05 Output short / Over temperature
+06 Output voltage too high
+07 Overload timeout
+08 Bus voltage too high
+09 Bus soft start failed
+11 Main relay failed
+51 Over current inverter
+52 Bus soft start failed
+53 Inverter soft start failed
+54 Self-test failed
+55 Over DC voltage on inverter output
+56 Battery connection open
+57 Current sensor failed
+58 Output voltage too low
+60 Inverter negative power
+71 Parallel version different
+72 Output circuit failed
+80 CAN communication failed
+81 Parallel host line lost
+82 Parallel synchronized signal lost
+83 Parallel battery voltage detect different
+84 Parallel line voltage/frequency detect different
+85 Parallel line input current unbalanced
+86 Parallel output setting different
+
+4.10 QMOD – Device Mode inquiry
+TX: QMOD<CRC><CR>
+RX: (M<CRC><CR>
+M:
+  P Power On mode
+  S Standby mode
+  L Line (Grid) mode
+  B Battery mode
+  F Fault mode
+  H Power saving mode
+
+4.11 QPIWS – Device Warning Status inquiry
+TX: QPIWS<CRC><CR>
+RX: (a0a1...a31<CRC><CR>
+ai bit is '1' if warning/fault present else '0'
+Important mapping (subset; full list in PDF):
+a0 Reserved
+a1 Inverter fault (if a1=1 then fault; some others are warning depending on a1)
+a2 Bus Over fault
+a3 Bus Under fault
+a4 Bus Soft Fail fault
+a5 LINE_FAIL warning
+a6 OPVShort warning
+a7 Inverter voltage too low fault
+a8 Inverter voltage too high fault
+a9 Over temperature (fault if a1=1 else warning)
+a10 Fan locked (fault if a1=1 else warning)
+a11 Battery voltage high (fault if a1=1 else warning)
+a12 Battery low alarm warning
+a14 Battery under shutdown warning
+a16 Overload (fault if a1=1 else warning)
+a17 Eeprom fault warning
+a18 Inverter Over Current fault
+a19 Inverter Soft Fail fault
+a20 Self Test Fail fault
+a21 OP DC Voltage Over fault
+a22 Bat Open fault
+a23 Current Sensor Fail fault
+a24 Battery Short fault
+a25 Power limit warning
+a26 PV voltage high warning
+a27 MPPT overload fault warning
+a28 MPPT overload warning warning
+a29 Battery too low to charge warning
+a30 Reserved
+a31 Reserved
+
+4.12 QDI – Default setting value information
+TX: QDI<CRC><CR>
+RX payload (space-separated, fixed order):
+  (
+  BBB.B  AC output voltage [V] default 230.0
+  CC.C   AC output frequency [Hz] default 50.0
+  00DD   Reserved for AC output parameter / Max AC charging current [A] (model-dependent)
+  EE.E   Battery under voltage [V]
+  FF.F   Charging float voltage [V]
+  GG.G   Charging bulk voltage [V]
+  HH.H   Battery default re-charge voltage [V] (11.5/23/46 for 12/24/48V)
+  II     Max charging current [A] (model-dependent)
+  J      AC input voltage range: 0 Appliance, 1 UPS
+  K      Output source priority: 0 Utility first, 1 Solar first (doc shows 0..1 but POP supports 0..2)
+  L      Charger source priority: 0 Utility first, 1 Solar first (note: later PCP supports 0..3)
+  M      Battery type: 0 AGM, 1 Flooded (doc later mentions User in other contexts)
+  N      Buzzer: 0 enable buzzer
+  O      Power saving: 0 disable
+  P      Overload restart: 0 disable
+  Q      Over temperature restart: 0 disable
+  R      LCD backlight: 1 enable
+  S      Alarm on primary interrupt: 1 enable
+  T      Fault code record: 0 disable
+  U      Overload bypass: default 0 disable (reserved in some models)
+  V      LCD escape after 1min timeout: default 1 enable (reserved in some models)
+  W      Output mode: default 0 single output
+  YY.Y   Battery re-discharge voltage [V] (13.5/27/54 for 12/24/48V)
+  X      PV OK condition for parallel (0/1)
+  Z      PV power balance (0/1; doc also mentions mode 1)
+  )<CRC><CR>
+Note: Exact defaults may be best obtained directly via QDI for the target device.
+
+4.13 QMCHGCR – Enquiry selectable values for max charging current
+TX: QMCHGCR<CRC><CR>
+RX: (AAA BBB CCC DDD ...<CRC><CR>
+Values separated by single spaces.
+
+4.14 QMUCHGCR – Enquiry selectable values for max utility charging current
+TX: QMUCHGCR<CRC><CR>
+RX: (AAA BBB CCC DDD ...<CRC><CR>
+
+4.15 QBOOT – Enquiry DSP has bootstrap or not
+TX: QBOOT<CRC><CR>
+RX: (1<CRC><CR> or (0<CRC><CR>
+If command unsupported, device responds (NAK<CR> (per PDF).
+
+4.16 QOPM – Enquiry output mode (For 4000/5000)
+TX: QOPM<CRC><CR>
+RX: (nn<CRC><CR>
+nn:
+  00 single machine output
+  01 parallel output
+  02 Phase 1 of 3-phase output
+  03 Phase 2 of 3-phase output
+  04 Phase 3 of 3-phase output
+
+============================================================
+5) SETTING PARAMETERS COMMANDS (WRITE)
+============================================================
+
+General ACK/NAK:
+- Success: (ACK<CRC><CR>
+- Failure: (NAK<CRC><CR>
+
+5.1 PE<XXX> / PD<XXX> – Set flags enable/disable
+TX: PE<XXX><CRC><CR> or PD<XXX><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CR>/(NAK<CRC><CR> depending on device
+Meaning:
+- PE = enable
+- PD = disable
+- XXX is a sequence of flag letters (from list below)
+
+Flag letters:
+A silence buzzer / open buzzer
+B overload bypass
+J power saving
+K LCD escape to default after 1 min timeout
+U overload restart
+V over temperature restart
+X backlight on
+Y alarm on primary source interrupt
+Z fault code record
+
+5.2 PF – Reset control parameters to default value
+TX: PF<CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CRC><CR>
+Effect: all device parameters reset to defaults (device-specific).
+
+5.3 MCHGC<nnn> – Set max charging current
+TX: MCHGC<nnn><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CRC><CR>
+Note: selectable values obtained via QMCHGCR.
+
+5.4 MNCHGC<mnnn> – Set max charging current > 100A (parallel)
+TX: MNCHGC<mnnn><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CRC><CR>
+m = parallel number, nnn = current
+
+5.5 MUCHGC<nnn> – Set max utility charging current
+TX: MUCHGC<nnn><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CRC><CR>
+Note: selectable values obtained via QMUCHGCR.
+
+5.6 F<nn> – Set output rating frequency
+TX: F<nn><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CRC><CR>
+nn typically: 50 or 60 (per device UI)
+
+5.7 POP<NN> – Set output source priority
+TX: POP<NN><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CRC><CR>
+NN:
+  00 Utility first
+  01 Solar first
+  02 SBU priority
+
+5.8 PBCV<nn.n> – Set battery re-charge voltage (for SBU)
+TX: PBCV<nn.n><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CRC><CR>
+Selectable examples from PDF:
+- 12V: 11.0/11.3/11.5/11.8/12.0/12.3/12.5/12.8
+- 24V: 22.0/22.5/23.0/23.5/24.0/24.5/25.0/25.5
+- 48V: 44/45/46/47/48/49/50/51
+
+5.9 PBDV<nn.n> – Set battery re-discharge voltage
+TX: PBDV<nn.n><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CRC><CR>
+Selectable examples from PDF:
+- 12V: 00.0, 12.0, 12.3, 12.5, 12.8, 13.0, 13.3, 13.5, 13.8, 14.0, 14.3, 14.5
+- 24V: 00.0, 24.0, 24.5, 25.0, 25.5, 26.0, 26.5, 27.0, 27.5, 28.0, 28.5, 29.0
+- 48V: 00.0, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58
+00.0 means battery full (charging in float mode).
+
+5.10 PCP<NN> – Set device charger priority
+TX: PCP<NN><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CRC><CR>
+Values:
+- Generic: 00 Utility, 01 Solar, 02 Solar+Utility
+- KS: 00 Utility, 01 Solar, 02 Solar+Utility, 03 Solar only
+- MKS: 00 Utility, 01 Solar, 03 Solar only
+
+5.11 PGR<NN> – Set grid working range
+TX: PGR<NN><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CR>
+NN: 00 Appliance, 01 UPS
+
+5.12 PBT<NN> – Set battery type
+TX: PBT<NN><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CRC><CR>
+NN: 00 AGM, 01 Flooded
+
+5.13 POPM<nn> – Set output mode (For 4000/5000)
+TX: POPM<nn><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CRC><CR>
+nn:
+  00 single machine output
+  01 parallel output
+  02 Phase 1 of 3-phase output
+  03 Phase 2 of 3-phase output
+  04 Phase 3 of 3-phase output
+
+5.14 PPCP<MNN> – Set parallel device charger priority (For 4000/5000)
+TX: PCP<MNN><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CRC><CR>
+NN:
+  00 Utility first
+  01 Solar first
+  02 Solar + Utility
+  03 Solar only
+M = parallel machine number
+
+5.15 PSDV<nn.n> – Set battery cut-off voltage (battery under voltage)
+TX: PSDV<nn.n><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CRC><CR>
+Range example (48V): 40.0V ~ 48.0V
+
+5.16 PCVV<nn.n> – Set battery constant voltage (C.V.) charging voltage
+TX: PCVV<nn.n><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CRC><CR>
+Range example (48V): 48.0V ~ 58.4V
+
+5.17 PBFT<nn.n> – Set battery float charging voltage
+TX: PBFT<nn.n><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CRC><CR>
+Range example (48V): 48.0V ~ 58.4V
+
+5.18 PPVOKC<n> – Set PV OK condition
+TX: PPVOKC<n><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CRC><CR>
+n:
+  0: if any inverter has PV connected => PV OK
+  1: only if all inverters have PV connected => PV OK
+
+5.19 PSPB<n> – Set solar power balance
+TX: PSPB<n><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CRC><CR>
+n:
+  0: PV input max current will be max charged current
+  1: PV input max power will be sum(max charged power + load power)
+
+5.20 PSDF – Calibration start command
+TX: PSDF<CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CRC><CR>
+
+5.21 PBATH<NNNN> – Battery high point calibration
+TX: PBATH<NNNN><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CRC><CR>
+NNNN is reference from meter:
+- if battery voltage is 26.50V => NNNN=2650
+
+5.22 PBATL<NNNN> – Battery low point calibration
+TX: PBATL<NNNN><CRC><CR>   (PDF has a PBATH typo in this section)
+RX: (ACK<CRC><CR> or (NAK<CRC><CR>
+Example: if battery voltage is 21.00V => NNNN=2100
+
+5.23 PMID – Save midpoint of A/D sample circuit
+TX: PMID<CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CRC><CR>
+
+5.24 PSAVE – Save calibration results to EEPROM
+TX: PSAVE<CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CRC><CR>
+
+5.25 BTA1<nnn.nn> – Battery voltage adjust point one
+TX: BTA1<nnn.nn><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CR>
+
+5.26 BTA2<nnn.nn> – Battery voltage adjust point two
+TX: BTA2<nnn.nn><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CR>
+Note: inverter adjusts battery voltage using point one and two.
+
+5.27 BTA0 – Reset battery voltage adjust parameters to default
+TX: BTA0<CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CR>
+
+5.28 PVA0 – Initialize PV adjust parameter
+TX: PVA0<CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CR>
+Note: inverter will adjust PV voltage after accept.
+
+5.29 PVA1<nnn.nn> – Set PV voltage adjust point
+TX: PVA1<nnn.nn><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CR>
+
+5.30 CF<xx> – Control fans state while fans not working
+TX: CF<xx><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CR>
+xx:
+  01: inverter fan on, charger fan off
+  10: charger fan on, inverter fan off
+  11: inverter and charger fans on
+  00: both fans off (if fans not turned on by unit)
+
+5.31 PBF<nnnn> – Calibrate battery voltage offset while fans on
+TX: PBF<nnnn><CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CR>
+Precondition: must send CF11 first to turn on both fans.
+nnnn = meter reference; if 56.00V => 5600
+
+5.32 SID<nn><mmmm...> – Set serial number
+TX: SIDnnmmmmmmmmmmmmmmmmmmmm<CRC><CR>
+RX: (ACK<CRC><CR> or (NAK<CR>
+nn = valid length of m
+m = serial number, total length is 20; invalid part can be anything
+Example (length 15, SN=123456789012345):
+  SID1512345678901234500000<CRC><CR>
+
+============================================================
+END OF FULL SPEC
+============================================================
