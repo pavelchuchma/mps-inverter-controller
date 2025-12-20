@@ -58,7 +58,7 @@ void updateMock() {
 
 // --------- JSON helpers ----------
 String makeStatusJson() {
-  DynamicJsonDocument doc(256);
+  JsonDocument doc;
   doc["type"] = "status";
   doc["pv_w"] = (int)round(g.pv_w);
   doc["batt_soc"] = g.batt_soc;
@@ -78,7 +78,7 @@ String makeStatusJson() {
 }
 
 String makeAckJson(const char* msg) {
-  DynamicJsonDocument doc(160);
+  JsonDocument doc;
   doc["type"] = "ack";
   doc["ok"] = true;
   doc["msg"] = msg;
@@ -88,7 +88,7 @@ String makeAckJson(const char* msg) {
 }
 
 String makeErrJson(const char* code, const char* msg) {
-  DynamicJsonDocument doc(200);
+  JsonDocument doc;
   doc["type"] = "err";
   doc["ok"] = false;
   doc["code"] = code;
@@ -143,7 +143,7 @@ void wsEvent(uint8_t clientId, WStype_t type, uint8_t * payload, size_t length) 
 
     case WStype_TEXT: {
         // Parse incoming JSON
-        DynamicJsonDocument doc(512);
+        JsonDocument doc;
         DeserializationError err = deserializeJson(doc, payload, length);
       if (err) {
         wsSend(clientId, makeErrJson("json_parse", err.c_str()));
