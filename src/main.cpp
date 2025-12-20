@@ -351,7 +351,7 @@ void handleNotFound() {
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(921600);
 
   WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(apIP, apIP, netMsk);
