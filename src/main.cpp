@@ -5,12 +5,10 @@
 #include <WebSocketsServer.h>
 #include <ArduinoJson.h>
 #include <cmath>
+#include "credentials.h"
 
-const char* AP_SSID = "FV-Dashboard";
-const char* AP_PASS = "12345678";
-
-IPAddress apIP(192,168,4,1);
-IPAddress netMsk(255,255,255,0);
+IPAddress apIP(192, 168, 4, 1);
+IPAddress netMsk(255, 255, 255, 0);
 
 WebServer server(80);
 WebSocketsServer ws(81);
@@ -132,52 +130,52 @@ String handleCommand(JsonDocument& doc) {
 }
 
 // --------- WS events ----------
-void wsEvent(uint8_t clientId, WStype_t type, uint8_t * payload, size_t length) {
+void wsEvent(uint8_t clientId, WStype_t type, uint8_t* payload, size_t length) {
   switch (type) {
-    case WStype_CONNECTED: {
-      IPAddress ip = ws.remoteIP(clientId);
-      Serial.printf("[WS] Client %u connected from %s\n", clientId, ip.toString().c_str());
+  case WStype_CONNECTED: {
+    IPAddress ip = ws.remoteIP(clientId);
+    Serial.printf("[WS] Client %u connected from %s\n", clientId, ip.toString().c_str());
+    wsSend(clientId, makeStatusJson());
+    break;
+  }
+  case WStype_DISCONNECTED:
+    Serial.printf("[WS] Client %u disconnected\n", clientId);
+    break;
+
+  case WStype_TEXT: {
+    // Parse incoming JSON
+    JsonDocument doc;
+    Serial.print("[WS RX] ");
+    Serial.write(payload, length);
+    Serial.println();
+    DeserializationError err = deserializeJson(doc, (const char*)payload, length);
+    if (err) {
+      wsSend(clientId, makeErrJson("json_parse", err.c_str()));
+      return;
+    }
+
+    const char* msgType = doc["type"] | "";
+    if (strcmp(msgType, "hello") == 0) {
+      wsSend(clientId, makeAckJson("hello"));
       wsSend(clientId, makeStatusJson());
-      break;
-    }
-    case WStype_DISCONNECTED:
-      Serial.printf("[WS] Client %u disconnected\n", clientId);
-      break;
-
-    case WStype_TEXT: {
-        // Parse incoming JSON
-        JsonDocument doc;
-        Serial.print("[WS RX] ");
-        Serial.write(payload, length);
-        Serial.println();
-        DeserializationError err = deserializeJson(doc, (const char*)payload, length);
-      if (err) {
-        wsSend(clientId, makeErrJson("json_parse", err.c_str()));
-        return;
-      }
-
-      const char* msgType = doc["type"] | "";
-      if (strcmp(msgType, "hello") == 0) {
-        wsSend(clientId, makeAckJson("hello"));
-        wsSend(clientId, makeStatusJson());
-        return;
-      }
-
-      if (strcmp(msgType, "cmd") == 0) {
-        String reply = handleCommand(doc);
-        wsSend(clientId, reply);
-
-        // Optionally push fresh status right after a command
-        wsBroadcastStatus();
-        return;
-      }
-
-      wsSend(clientId, makeErrJson("bad_request", "Unknown message type"));
-      break;
+      return;
     }
 
-    default:
-      break;
+    if (strcmp(msgType, "cmd") == 0) {
+      String reply = handleCommand(doc);
+      wsSend(clientId, reply);
+
+      // Optionally push fresh status right after a command
+      wsBroadcastStatus();
+      return;
+    }
+
+    wsSend(clientId, makeErrJson("bad_request", "Unknown message type"));
+    break;
+  }
+
+  default:
+    break;
   }
 }
 
@@ -222,6 +220,40 @@ void handleNotFound() {
   server.send(404, "text/plain", "Not found");
 }
 
+void connectToWiFi() {
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  uint16_t connectWait = 240;
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(250);
+    Serial.printf(".");
+    if (!connectWait--) {
+      Serial.printf("Failed to connect, restarting!\n");
+      ESP.restart();
+    }
+  }
+}
+
+void createWiFiAP() {
+  WiFi.mode(WIFI_AP);
+  WiFi.softAPConfig(apIP, apIP, netMsk);
+  WiFi.softAP(AP_SSID, AP_PASS);
+}
+
+void initializeWiFi() {
+  // connectToWiFi();
+  createWiFiAP();
+
+  Serial.printf("\nWiFi connected, IP address: ");
+  Serial.println(WiFi.localIP());
+  if (!MDNS.begin("inverter")) {
+    Serial.println("ERROR: setting up MDNS responder!");
+  } else {
+    Serial.println("mDNS responder started");
+  }
+}
+
+
 void setup() {
   Serial.begin(921600);
 
@@ -230,16 +262,7 @@ void setup() {
     Serial.println("LittleFS mount failed");
   }
 
-  WiFi.mode(WIFI_AP);
-  WiFi.softAPConfig(apIP, apIP, netMsk);
-  WiFi.softAP(AP_SSID, AP_PASS);
-
-  // Advertise mDNS name `inverter.local` so clients can reach the device
-  if (!MDNS.begin("inverter")) {
-    Serial.println("mDNS start failed");
-  } else {
-    Serial.println("mDNS responder started: inverter.local");
-  }
+  initializeWiFi();
 
   server.on("/", HTTP_GET, handleRoot);
 
