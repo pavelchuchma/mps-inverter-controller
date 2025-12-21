@@ -106,8 +106,11 @@ void wsBroadcastStatus() {
 // --------- Command handling ----------
 String handleCommand(JsonDocument& doc) {
   // Expected: { "type":"cmd", "name":"...", "value": ... }
-  const char* name = doc["name"] | nullptr;
-  if (!name) return makeErrJson("bad_request", "Missing 'name'");
+  const char* name = doc["name"].as<const char*>();
+  if (!name) {
+    Serial.println("[CMD] missing name field");
+    return makeErrJson("bad_request", "Missing 'name'");
+  }
 
   // Example command: set_demo (bool)
   if (strcmp(name, "set_demo") == 0) {
@@ -144,7 +147,10 @@ void wsEvent(uint8_t clientId, WStype_t type, uint8_t * payload, size_t length) 
     case WStype_TEXT: {
         // Parse incoming JSON
         JsonDocument doc;
-        DeserializationError err = deserializeJson(doc, payload, length);
+        Serial.print("[WS RX] ");
+        Serial.write(payload, length);
+        Serial.println();
+        DeserializationError err = deserializeJson(doc, (const char*)payload, length);
       if (err) {
         wsSend(clientId, makeErrJson("json_parse", err.c_str()));
         return;
