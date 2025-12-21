@@ -238,11 +238,13 @@ void createWiFiAP() {
   WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(apIP, apIP, netMsk);
   WiFi.softAP(AP_SSID, AP_PASS);
+
+  Serial.print("AP IP: "); Serial.println(WiFi.softAPIP());
 }
 
 void initializeWiFi() {
-  // connectToWiFi();
-  createWiFiAP();
+  connectToWiFi();
+  // createWiFiAP();
 
   Serial.printf("\nWiFi connected, IP address: ");
   Serial.println(WiFi.localIP());
@@ -271,8 +273,6 @@ void setup() {
 
   ws.begin();
   ws.onEvent(wsEvent);
-
-  Serial.print("AP IP: "); Serial.println(WiFi.softAPIP());
   Serial.println("HTTP :80, WS :81");
 }
 

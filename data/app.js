@@ -13,7 +13,7 @@ function setConn(ok, msg){
 let ws;
 let demoMode = false;
 const limEl = $("lim");
-let lastServerLimit = Number(limEl.value);
+let lastServerLimit = -1;
 
 function updateModified(){
   const modified = Number(limEl.value) !== lastServerLimit;
@@ -60,7 +60,7 @@ function connect(){
         demoMode = !!j.demo;
         $("demoVal").textContent = demoMode ? "true" : "false";
 
-        const lim = Math.round(j.output_limit_w ?? 2000);
+        const lim = Math.round(j.output_limit_w ?? -1);
         if (lastServerLimit !== lim) {
           lastServerLimit = lim;
           limEl.value = lim;
