@@ -78,6 +78,8 @@ function setConn(ok, msg){
 
 let ws;
 let demoMode = false;
+const limEl = $("lim");
+let lastServerLimit = Number(limEl.value);
 
 function send(obj){
   const s = JSON.stringify(obj);
@@ -118,8 +120,11 @@ function connect(){
         $("demoVal").textContent = demoMode ? "true" : "false";
 
         const lim = Math.round(j.output_limit_w ?? 2000);
-        $("limVal").textContent = lim;
-        $("lim").value = lim;
+        if (lastServerLimit !== lim) {
+          lastServerLimit = lim;
+          limEl.value = lim;
+          $("limVal").textContent = lim;
+        }
         return;
       }
 
@@ -145,8 +150,8 @@ $("btnDemo").addEventListener("click", () => {
   send({type:"cmd", name:"set_demo", value: demoMode});
 });
 
-$("lim").addEventListener("input", () => {
-  $("limVal").textContent = $("lim").value;
+limEl.addEventListener("input", () => {
+  $("limVal").textContent = limEl.value;
 });
 
 $("btnApply").addEventListener("click", () => {
