@@ -19,6 +19,8 @@ const char INDEX_HTML[] PROGMEM = R"HTML(
     .ok{background:#eaffea;}
     button{padding:10px 14px;font-size:14px;border-radius:12px;border:1px solid #ddd;background:#fff;}
     input[type="range"]{width:100%;}
+    input[type="range"].modified{accent-color:#ef4444;box-shadow:0 0 0 6px rgba(239,68,68,0.08);}
+    input[type="range"].modified:focus{box-shadow:0 0 0 8px rgba(239,68,68,0.12);}
     pre{background:#111827;color:#e5e7eb;padding:10px;border-radius:12px;overflow:auto;margin:8px 0 0;}
     .muted{opacity:.65;font-size:12px;}
   </style>
@@ -81,6 +83,13 @@ let demoMode = false;
 const limEl = $("lim");
 let lastServerLimit = Number(limEl.value);
 
+function updateModified(){
+  const modified = Number(limEl.value) !== lastServerLimit;
+  limEl.classList.toggle('modified', modified);
+}
+
+updateModified();
+
 function send(obj){
   const s = JSON.stringify(obj);
   logln("SEND: " + s);
@@ -125,6 +134,7 @@ function connect(){
           limEl.value = lim;
           $("limVal").textContent = lim;
         }
+        updateModified();
         return;
       }
 
@@ -152,6 +162,7 @@ $("btnDemo").addEventListener("click", () => {
 
 limEl.addEventListener("input", () => {
   $("limVal").textContent = limEl.value;
+  updateModified();
 });
 
 $("btnApply").addEventListener("click", () => {
