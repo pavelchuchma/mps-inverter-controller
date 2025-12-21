@@ -1,0 +1,51 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FV Dashboard</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="row">
+    <h2 style="margin:0;">FV Dashboard</h2>
+    <span id="conn" class="pill">connecting…</span>
+  </div>
+  <p class="muted">WebSocket push (port 81)</p>
+
+  <div class="grid">
+    <div class="card"><div class="k">FV výkon</div><div class="v"><span id="pv">—</span> W</div></div>
+    <div class="card"><div class="k">Baterie (SoC)</div><div class="v"><span id="soc">—</span> %</div></div>
+    <div class="card"><div class="k">Napětí baterie</div><div class="v"><span id="bv">—</span> V</div></div>
+    <div class="card"><div class="k">Zátěž</div><div class="v"><span id="load">—</span> W</div></div>
+    <div class="card"><div class="k">Síť</div><div class="v" id="grid">—</div></div>
+    <div class="card"><div class="k">Stav</div><div class="v" style="font-size:22px;" id="state">—</div>
+      <div class="muted">ts: <span id="ts">—</span></div></div>
+  </div>
+
+  <div class="card" style="margin-top:12px;">
+    <div class="k">Ovládání (demo)</div>
+    <div class="row" style="margin-top:10px;">
+      <button id="btnDemo">Toggle demo</button>
+      <span class="muted">demo: <span id="demoVal">—</span></span>
+    </div>
+
+    <div style="margin-top:14px;">
+      <div class="row">
+        <div class="muted">Output limit (W)</div>
+        <div><b id="limVal">—</b></div>
+      </div>
+      <input id="lim" type="range" min="0" max="5000" step="50" value="2000">
+      <div class="row">
+        <button id="btnApply">Apply limit</button>
+        <span class="muted">mock command</span>
+      </div>
+    </div>
+
+    <div class="muted" style="margin-top:10px;">Log:</div>
+    <pre id="log">—</pre>
+  </div>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>

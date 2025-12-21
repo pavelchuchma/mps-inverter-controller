@@ -1,0 +1,15 @@
+body{font-family:system-ui,sans-serif;margin:0;padding:18px;background:#f6f7f9;}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;}
+.card{background:#fff;border:1px solid #e6e8ee;border-radius:14px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.04);}
+.k{font-size:12px;opacity:.65;}
+.v{font-size:28px;font-weight:650;margin-top:6px;}
+.row{display:flex;justify-content:space-between;gap:10px;align-items:center;}
+.pill{font-size:12px;padding:4px 8px;border-radius:999px;background:#eef2ff;}
+.err{background:#ffecec;}
+.ok{background:#eaffea;}
+button{padding:10px 14px;font-size:14px;border-radius:12px;border:1px solid #ddd;background:#fff;}
+input[type="range"]{width:100%;}
+input[type="range"].modified{accent-color:#ef4444;box-shadow:0 0 0 6px rgba(239,68,68,0.08);}
+input[type="range"].modified:focus{box-shadow:0 0 0 8px rgba(239,68,68,0.12);}
+pre{background:#111827;color:#e5e7eb;padding:10px;border-radius:12px;overflow:auto;margin:8px 0 0;}
+.muted{opacity:.65;font-size:12px;}
