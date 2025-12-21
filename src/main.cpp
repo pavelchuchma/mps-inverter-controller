@@ -37,6 +37,7 @@ Status g;
 
 bool demoMode = true;
 int outputLimitW = 2000; // example “control” value (mock)
+float outputDutyCycle = 0.0f; // 0.0 - 1.0 (represented as percent in UI)
 
 // --------- Mock status generation ----------
 void updateMock() {
@@ -69,6 +70,7 @@ String makeStatusJson() {
   // Include some “control state” so UI can reflect it
   doc["demo"] = demoMode;
   doc["output_limit_w"] = outputLimitW;
+  doc["output_duty_cycle"] = outputDutyCycle;
 
   String out;
   serializeJson(doc, out);
@@ -124,6 +126,15 @@ String handleCommand(JsonDocument& doc) {
     if (v < 0 || v > 10000) return makeErrJson("range", "output_limit_w out of range");
     outputLimitW = v;
     return makeAckJson("output limit updated");
+  }
+
+  // Example command: set_output_duty_cycle (float 0.0 - 1.0)
+  if (strcmp(name, "set_output_duty_cycle") == 0) {
+    if (doc["value"].isNull()) return makeErrJson("bad_request", "Missing 'value'");
+    float v = doc["value"].as<float>();
+    if (v < 0.0f || v > 1.0f) return makeErrJson("range", "output_duty_cycle out of range");
+    outputDutyCycle = v;
+    return makeAckJson("duty cycle updated");
   }
 
   return makeErrJson("unknown_cmd", "Unknown command name");

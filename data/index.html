@@ -3,15 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FV Dashboard</title>
+  <title>Inverter</title>
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
   <div class="row">
-    <h2 style="margin:0;">FV Dashboard</h2>
     <span id="conn" class="pill">connecting…</span>
   </div>
-  <p class="muted">WebSocket push (port 81)</p>
 
   <div class="grid">
     <div class="card"><div class="k">FV výkon</div><div class="v"><span id="pv">—</span> W</div></div>
@@ -38,7 +36,17 @@
       <input id="lim" type="range" min="0" max="5000" step="50" value="2000">
       <div class="row">
         <button id="btnApply">Apply limit</button>
-        <span class="muted">mock command</span>
+      </div>
+    </div>
+
+    <div style="margin-top:14px;">
+      <div class="row">
+        <div class="muted">Output duty cycle</div>
+        <div><b id="dutyVal">—</b></div>
+      </div>
+      <input id="duty" type="range" min="0" max="100" step="1" value="50">
+      <div class="row">
+        <button id="btnApplyDuty">Apply duty</button>
       </div>
     </div>
 

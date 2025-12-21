@@ -14,13 +14,21 @@ let ws;
 let demoMode = false;
 const limEl = $("lim");
 let lastServerLimit = -1;
+const dutyEl = $("duty");
+let lastServerDuty = -1;
 
 function updateModified(){
   const modified = Number(limEl.value) !== lastServerLimit;
   limEl.classList.toggle('modified', modified);
 }
 
+function updateModifiedDuty(){
+  const modified = Number(dutyEl.value) !== lastServerDuty;
+  dutyEl.classList.toggle('modified', modified);
+}
+
 updateModified();
+updateModifiedDuty();
 
 function send(obj){
   const s = JSON.stringify(obj);
@@ -66,7 +74,14 @@ function connect(){
           limEl.value = lim;
           $("limVal").textContent = lim;
         }
+        const duty = j.output_duty_cycle !== undefined ? Math.round(j.output_duty_cycle * 100) : -1;
+        if (lastServerDuty !== duty) {
+          lastServerDuty = duty;
+          dutyEl.value = duty;
+          $("dutyVal").textContent = (duty >= 0 ? (duty + ' %') : "—");
+        }
         updateModified();
+        updateModifiedDuty();
         return;
       }
 
@@ -97,9 +112,20 @@ limEl.addEventListener("input", () => {
   updateModified();
 });
 
+dutyEl.addEventListener("input", () => {
+  $("dutyVal").textContent = dutyEl.value + ' %';
+  updateModifiedDuty();
+});
+
 $("btnApply").addEventListener("click", () => {
   const v = Number($("lim").value);
   send({type:"cmd", name:"set_output_limit_w", value: v});
+});
+
+$("btnApplyDuty").addEventListener("click", () => {
+  const pct = Number($("duty").value);
+  const v = pct / 100.0;
+  send({type:"cmd", name:"set_output_duty_cycle", value: v});
 });
 
 connect();
