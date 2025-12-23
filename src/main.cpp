@@ -13,6 +13,9 @@ IPAddress netMsk(255, 255, 255, 0);
 WebServer server(80);
 WebSocketsServer ws(81);
 
+// Track connected WS clients to avoid broadcasting when nobody is listening
+static int g_wsClientCount = 0;
+
 // WS helpers: accept by-value so callers can pass rvalues (makeStatusJson())
 static inline void wsSend(uint8_t clientId, String s) {
   ws.sendTXT(clientId, s);
@@ -38,6 +41,8 @@ Status g;
 bool demoMode = true;
 int outputLimitW = 2000; // example “control” value (mock)
 float outputDutyCycle = 0.0f; // 0.0 - 1.0 (represented as percent in UI)
+// PWM-capable GPIO25
+const int pwmPin = 25; // change if you want a different output-capable pin
 
 // --------- Mock status generation ----------
 void updateMock() {
@@ -100,6 +105,7 @@ String makeErrJson(const char* code, const char* msg) {
 
 // --------- WebSocket broadcast ----------
 void wsBroadcastStatus() {
+  if (g_wsClientCount <= 0) return; // nothing to send
   wsBroadcastTxt(makeStatusJson());
 }
 
@@ -146,11 +152,13 @@ void wsEvent(uint8_t clientId, WStype_t type, uint8_t* payload, size_t length) {
   case WStype_CONNECTED: {
     IPAddress ip = ws.remoteIP(clientId);
     Serial.printf("[WS] Client %u connected from %s\n", clientId, ip.toString().c_str());
+    ++g_wsClientCount;
     wsSend(clientId, makeStatusJson());
     break;
   }
   case WStype_DISCONNECTED:
     Serial.printf("[WS] Client %u disconnected\n", clientId);
+    if (g_wsClientCount > 0) --g_wsClientCount;
     break;
 
   case WStype_TEXT: {
@@ -244,23 +252,60 @@ void setup() {
 
   ws.begin();
   ws.onEvent(wsEvent);
+  // Setup PWM output pin
+  pinMode(pwmPin, OUTPUT);
+  digitalWrite(pwmPin, LOW);
   Serial.println("HTTP :80, WS :81");
+
+  // Start a background task to broadcast WS status so slow clients won't block main loop
+  xTaskCreatePinnedToCore(
+    [](void*) { // task lambda
+      for (;;) {
+        if (g_wsClientCount > 0) {
+          uint32_t t0 = millis();
+          String s = makeStatusJson();
+          wsBroadcastTxt(s);
+          uint32_t t1 = millis();
+          if (t1 - t0 > 500) Serial.printf("[DIAG] wsBroadcastTask iteration took %ums\n", (unsigned)(t1 - t0));
+        }
+        vTaskDelay(pdMS_TO_TICKS(1000));
+      }
+    },
+    "ws_bcast",
+    4096,
+    NULL,
+    1,
+    NULL,
+    1);
 }
 
 uint32_t lastMock = 0;
 uint32_t lastPush = 0;
 
 void loop() {
+  uint32_t t0 = millis();
   server.handleClient();
+  uint32_t t1 = millis();
   ws.loop();
+  uint32_t t2 = millis();
+
+  // Log if these calls take unusually long (indicates blocking)
+  uint32_t hdlDur = t1 - t0;
+  uint32_t wsDur = t2 - t1;
+  if (hdlDur > 50) Serial.printf("[DIAG] server.handleClient() took %ums\n", hdlDur);
+  if (wsDur > 50) Serial.printf("[DIAG] ws.loop() took %ums\n", wsDur);
 
   if (millis() - lastMock >= 250) {
     lastMock = millis();
     updateMock();
   }
 
-  if (millis() - lastPush >= 1000) {
-    lastPush = millis();
-    wsBroadcastStatus();
-  }
+  // Software PWM: period 2000 ms (2s). Drive `pwmPin` HIGH for
+  // outputDutyCycle * period, otherwise LOW. `outputDutyCycle` is 0.0-1.0.
+  const uint32_t pwmPeriodMs = 2000;
+  uint32_t phase = millis() % pwmPeriodMs;
+  uint32_t onTime = (uint32_t)round(outputDutyCycle * (float)pwmPeriodMs);
+  digitalWrite(pwmPin, (phase < onTime) ? HIGH : LOW);
+  // Small yield to allow WiFi/RTOS background tasks to run and avoid starvation
+  delay(5);
 }
