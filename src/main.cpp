@@ -6,6 +6,10 @@
 #include <ArduinoJson.h>
 #include <cmath>
 #include "credentials.h"
+#include <esp_system.h>
+#include <esp_heap_caps.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 IPAddress apIP(192, 168, 4, 1);
 IPAddress netMsk(255, 255, 255, 0);
@@ -15,6 +19,7 @@ WebSocketsServer ws(81);
 
 // Track connected WS clients to avoid broadcasting when nobody is listening
 static int g_wsClientCount = 0;
+static TaskHandle_t g_wsTask = nullptr; // handle WS broadcast task for diagnostics
 
 // WS helpers: accept by-value so callers can pass rvalues (makeStatusJson())
 static inline void wsSend(uint8_t clientId, String s) {
@@ -82,6 +87,29 @@ String makeStatusJson() {
   return out;
 }
 
+// Safer, no-String variant to reduce heap fragmentation on long runs
+// Returns number of bytes written (excluding null-terminator); 0 on failure
+size_t makeStatusJsonTo(char* buf, size_t cap) {
+  // Reserve a static doc to avoid heap churn. Size estimate ~300B; use headroom.
+  // Potlačení deprecation warningu pro StaticJsonDocument pouze zde
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  StaticJsonDocument<384> doc;
+  #pragma GCC diagnostic pop
+  doc["type"] = "status";
+  doc["pv_w"] = (int)round(g.pv_w);
+  doc["batt_soc"] = g.batt_soc;
+  doc["batt_v"] = g.batt_v;
+  doc["load_w"] = (int)round(g.load_w);
+  doc["grid_ok"] = g.grid_ok;
+  doc["state"] = g.state;
+  doc["ts_ms"] = g.ts_ms;
+  doc["demo"] = demoMode;
+  doc["output_limit_w"] = outputLimitW;
+  doc["output_duty_cycle"] = outputDutyCycle;
+  return serializeJson(doc, buf, cap);
+}
+
 String makeAckJson(const char* msg) {
   JsonDocument doc;
   doc["type"] = "ack";
@@ -106,7 +134,12 @@ String makeErrJson(const char* code, const char* msg) {
 // --------- WebSocket broadcast ----------
 void wsBroadcastStatus() {
   if (g_wsClientCount <= 0) return; // nothing to send
-  wsBroadcastTxt(makeStatusJson());
+  // Use fixed buffer to avoid dynamic allocation of String
+  static char buf[512];
+  size_t n = makeStatusJsonTo(buf, sizeof(buf));
+  if (n > 0) {
+    ws.broadcastTXT((uint8_t*)buf, n);
+  }
 }
 
 // --------- Command handling ----------
@@ -153,7 +186,12 @@ void wsEvent(uint8_t clientId, WStype_t type, uint8_t* payload, size_t length) {
     IPAddress ip = ws.remoteIP(clientId);
     Serial.printf("[WS] Client %u connected from %s\n", clientId, ip.toString().c_str());
     ++g_wsClientCount;
-    wsSend(clientId, makeStatusJson());
+    // Send initial status using fixed buffer to minimize heap churn
+    static char buf[512];
+    size_t n = makeStatusJsonTo(buf, sizeof(buf));
+    if (n > 0) {
+      ws.sendTXT(clientId, (uint8_t*)buf, n);
+    }
     break;
   }
   case WStype_DISCONNECTED:
@@ -239,6 +277,9 @@ void initializeWiFi() {
 
 void setup() {
   Serial.begin(921600);
+  // Log reset reason to help diagnose unexpected restarts
+  esp_reset_reason_t rr = esp_reset_reason();
+  Serial.printf("[BOOT] reset reason=%d\n", (int)rr);
 
   // Initialize webserver / LittleFS (web UI files in data/ will be uploaded to device)
   initWebServer();
@@ -252,6 +293,9 @@ void setup() {
 
   ws.begin();
   ws.onEvent(wsEvent);
+  // Enable heartbeat to drop dead clients and free resources automatically
+  // ping every 15s, expect pong within 3s, drop after 2 missed pongs
+  ws.enableHeartbeat(15000, 3000, 2);
   // Setup PWM output pin
   pinMode(pwmPin, OUTPUT);
   digitalWrite(pwmPin, LOW);
@@ -263,8 +307,10 @@ void setup() {
       for (;;) {
         if (g_wsClientCount > 0) {
           uint32_t t0 = millis();
-          String s = makeStatusJson();
-          wsBroadcastTxt(s);
+          // Broadcast using fixed buffer to avoid heap fragmentation
+          static char buf[512];
+          size_t n = makeStatusJsonTo(buf, sizeof(buf));
+          if (n > 0) ws.broadcastTXT((uint8_t*)buf, n);
           uint32_t t1 = millis();
           if (t1 - t0 > 500) Serial.printf("[DIAG] wsBroadcastTask iteration took %ums\n", (unsigned)(t1 - t0));
         }
@@ -275,7 +321,7 @@ void setup() {
     4096,
     NULL,
     1,
-    NULL,
+    &g_wsTask,
     1);
 }
 
@@ -308,4 +354,17 @@ void loop() {
   digitalWrite(pwmPin, (phase < onTime) ? HIGH : LOW);
   // Small yield to allow WiFi/RTOS background tasks to run and avoid starvation
   delay(5);
+
+  // Periodic diagnostics to catch memory/stack issues causing resets after hours
+  static uint32_t lastDiag = 0;
+  if (millis() - lastDiag > 60000) { // every 60s
+    lastDiag = millis();
+    size_t freeHeap = ESP.getFreeHeap();
+    size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT);
+    Serial.printf("[DIAG] heap free=%u, largest=%u\n", (unsigned)freeHeap, (unsigned)largest);
+    if (g_wsTask) {
+      UBaseType_t watermark = uxTaskGetStackHighWaterMark(g_wsTask);
+      Serial.printf("[DIAG] ws_bcast stack high watermark=%u words\n", (unsigned)watermark);
+    }
+  }
 }
