@@ -16,6 +16,7 @@ const limEl = $("lim");
 let lastServerLimit = -1;
 const dutyEl = $("duty");
 let lastServerDuty = -1;
+let resetReasonLogged = false;
 
 function updateModified(){
   const modified = Number(limEl.value) !== lastServerLimit;
@@ -64,6 +65,14 @@ function connect(){
         $("grid").textContent = j.grid_ok ? "OK" : "FAIL";
         $("state").textContent = j.state || "—";
         $("ts").textContent = j.ts_ms;
+
+        if (!resetReasonLogged && (j.reset_reason !== undefined || j.reset_reason_str !== undefined)){
+          const rr = (j.reset_reason_str || "").toString();
+          const rrn = (j.reset_reason !== undefined) ? String(j.reset_reason) : "";
+          const msg = rr || rrn ? `ESP reset reason: ${rr}${rr && rrn ? ` (${rrn})` : rrn ? rrn : ""}` : "ESP reset reason: (unknown)";
+          logln(msg);
+          resetReasonLogged = true;
+        }
 
         demoMode = !!j.demo;
         $("demoVal").textContent = demoMode ? "true" : "false";

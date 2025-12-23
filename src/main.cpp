@@ -43,6 +43,27 @@ struct Status {
 
 Status g;
 
+// ---- Reset reason (persisted from setup) ----
+static esp_reset_reason_t g_reset_reason = ESP_RST_UNKNOWN;
+static const char* g_reset_reason_str = "UNKNOWN";
+
+static const char* resetReasonToStr(esp_reset_reason_t r){
+  switch(r){
+    case ESP_RST_UNKNOWN:      return "ESP_RST_UNKNOWN: Reset reason can not be determined";
+    case ESP_RST_POWERON:      return "ESP_RST_POWERON: Reset due to power-on event";
+    case ESP_RST_EXT:          return "ESP_RST_EXT: Reset by external pin (not applicable for ESP32)";
+    case ESP_RST_SW:           return "ESP_RST_SW: Software reset via esp_restart";
+    case ESP_RST_PANIC:        return "ESP_RST_PANIC: Software reset due to exception/panic";
+    case ESP_RST_INT_WDT:      return "ESP_RST_INT_WDT: Reset due to interrupt watchdog";
+    case ESP_RST_TASK_WDT:     return "ESP_RST_TASK_WDT: Reset due to task watchdog";
+    case ESP_RST_WDT:          return "ESP_RST_WDT: Reset due to other watchdogs";
+    case ESP_RST_DEEPSLEEP:    return "ESP_RST_DEEPSLEEP: Reset after exiting deep sleep mode";
+    case ESP_RST_BROWNOUT:     return "ESP_RST_BROWNOUT: Brownout reset (software or hardware)";
+    case ESP_RST_SDIO:         return "ESP_RST_SDIO: Reset over SDIO";
+    default:                   return "OTHER";
+  }
+}
+
 bool demoMode = true;
 int outputLimitW = 2000; // example “control” value (mock)
 float outputDutyCycle = 0.0f; // 0.0 - 1.0 (represented as percent in UI)
@@ -82,6 +103,10 @@ String makeStatusJson() {
   doc["output_limit_w"] = outputLimitW;
   doc["output_duty_cycle"] = outputDutyCycle;
 
+  // System diagnostics
+  doc["reset_reason"] = (int)g_reset_reason;
+  doc["reset_reason_str"] = g_reset_reason_str;
+
   String out;
   serializeJson(doc, out);
   return out;
@@ -94,7 +119,8 @@ size_t makeStatusJsonTo(char* buf, size_t cap) {
   // Potlačení deprecation warningu pro StaticJsonDocument pouze zde
   #pragma GCC diagnostic push
   #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-  StaticJsonDocument<384> doc;
+  // Increased capacity to accommodate longer reset_reason_str descriptions
+  StaticJsonDocument<768> doc;
   #pragma GCC diagnostic pop
   doc["type"] = "status";
   doc["pv_w"] = (int)round(g.pv_w);
@@ -107,6 +133,8 @@ size_t makeStatusJsonTo(char* buf, size_t cap) {
   doc["demo"] = demoMode;
   doc["output_limit_w"] = outputLimitW;
   doc["output_duty_cycle"] = outputDutyCycle;
+  doc["reset_reason"] = (int)g_reset_reason;
+  doc["reset_reason_str"] = g_reset_reason_str;
   return serializeJson(doc, buf, cap);
 }
 
@@ -278,8 +306,9 @@ void initializeWiFi() {
 void setup() {
   Serial.begin(921600);
   // Log reset reason to help diagnose unexpected restarts
-  esp_reset_reason_t rr = esp_reset_reason();
-  Serial.printf("[BOOT] reset reason=%d\n", (int)rr);
+  g_reset_reason = esp_reset_reason();
+  g_reset_reason_str = resetReasonToStr(g_reset_reason);
+  Serial.printf("[BOOT] reset reason=%d (%s)\n", (int)g_reset_reason, g_reset_reason_str);
 
   // Initialize webserver / LittleFS (web UI files in data/ will be uploaded to device)
   initWebServer();
@@ -308,7 +337,8 @@ void setup() {
         if (g_wsClientCount > 0) {
           uint32_t t0 = millis();
           // Broadcast using fixed buffer to avoid heap fragmentation
-          static char buf[512];
+          // Buffer for JSON broadcast; increased to fit extended reset reason strings
+          static char buf[768];
           size_t n = makeStatusJsonTo(buf, sizeof(buf));
           if (n > 0) ws.broadcastTXT((uint8_t*)buf, n);
           uint32_t t1 = millis();
