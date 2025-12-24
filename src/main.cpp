@@ -11,6 +11,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <stdarg.h>
+#include <LittleFS.h>
 
 IPAddress apIP(192, 168, 4, 1);
 IPAddress netMsk(255, 255, 255, 0);
@@ -56,6 +57,14 @@ static inline void printWarning(const char* fmt, ...) {
   char out[420];
   snprintf(out, sizeof(out), "[%s] [WARN] %s\n", tbuf, msg);
   Serial.print(out);
+  // Append warning into LittleFS logfile
+  if (LittleFS.begin()) {
+    File f = LittleFS.open("/app.log", "a");
+    if (f) {
+      f.print(out);
+      f.close();
+    }
+  }
 }
 
 // --------- App state ----------
@@ -338,6 +347,8 @@ void setup() {
   g_reset_reason = esp_reset_reason();
   g_reset_reason_str = resetReasonToStr(g_reset_reason);
   Serial.printf("[BOOT] reset reason=%d (%s)\n", (int)g_reset_reason, g_reset_reason_str);
+  // Also log reboot reason as a WARN (will append to LittleFS via printWarning)
+  printWarning("[BOOT] reset reason=%d (%s)", (int)g_reset_reason, g_reset_reason_str);
 
   // Initialize webserver / LittleFS (web UI files in data/ will be uploaded to device)
   initWebServer();
