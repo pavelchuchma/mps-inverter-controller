@@ -1,0 +1,277 @@
+#include "inverter_comm.h"
+#include <HardwareSerial.h>
+
+static SemaphoreHandle_t g_inv_mutex = NULL;
+
+inverter_status_t g_inverter_status = {0};
+char g_inverter_mode_code = '\0';
+char g_inverter_mode_name[32] = "Unknown";
+
+// CRC-16/XMODEM implementation
+static uint16_t crc16_xmodem(const uint8_t* data, size_t len) {
+  uint16_t crc = 0x0000;
+  for (size_t i = 0; i < len; ++i) {
+    crc ^= ((uint16_t)data[i]) << 8;
+    for (int b = 0; b < 8; ++b) {
+      if (crc & 0x8000) crc = (crc << 1) ^ 0x1021;
+      else crc <<= 1;
+    }
+  }
+  return crc & 0xFFFF;
+}
+
+static void adjust_crc_bytes(uint8_t &hi, uint8_t &lo) {
+  // Device increments reserved values 0x28 '(' , 0x0D CR, 0x0A LF
+  const uint8_t RESERVED[] = {0x28, 0x0D, 0x0A};
+  for (uint8_t r: RESERVED) {
+    if (hi == r) hi = (hi + 1) & 0xFF;
+    if (lo == r) lo = (lo + 1) & 0xFF;
+  }
+}
+
+// Build frame: payload ASCII + CRC(hi,lo adjusted) + CR
+static void build_frame(const String &payload, uint8_t *out, size_t &out_len) {
+  size_t plen = payload.length();
+  memcpy(out, (const char*)payload.c_str(), plen);
+  uint16_t crc = crc16_xmodem((const uint8_t*)payload.c_str(), plen);
+  uint8_t hi = (crc >> 8) & 0xFF;
+  uint8_t lo = crc & 0xFF;
+  adjust_crc_bytes(hi, lo);
+  out[plen + 0] = hi;
+  out[plen + 1] = lo;
+  out[plen + 2] = 0x0D; // CR
+  out_len = plen + 3;
+}
+
+// Read from Serial1 until CR or timeout. Returns length in bytes stored in buf.
+static size_t read_until_cr(HardwareSerial &s, uint8_t* buf, size_t max_len, unsigned long timeout_ms) {
+  size_t idx = 0;
+  unsigned long start = millis();
+  while (idx < max_len) {
+    if (s.available()) {
+      int b = s.read();
+      if (b < 0) break;
+      buf[idx++] = (uint8_t)b;
+      if ((uint8_t)b == 0x0D) break;
+    } else {
+      if (millis() - start >= timeout_ms) break;
+      vTaskDelay(pdMS_TO_TICKS(2));
+    }
+  }
+  return idx;
+}
+
+// Send ASCII command and read response. Returns payload (inside '('.. ).
+// On CRC mismatch the function prints the raw response and returns false.
+static bool send_command_and_get_payload(const String &cmd, String &out_payload) {
+  HardwareSerial &ser = Serial1;
+  uint8_t tx[128];
+  size_t tx_len = 0;
+  build_frame(cmd, tx, tx_len);
+
+  // Flush RX and TX buffers
+  while (ser.available()) ser.read();
+  ser.write(tx, tx_len);
+  ser.flush();
+
+  // Wait for response up to 1000ms
+  uint8_t rx[512];
+  size_t rx_len = read_until_cr(ser, rx, sizeof(rx), 1000);
+  if (rx_len == 0) return false;
+
+  // Response should end with CR
+  if (rx[rx_len-1] != 0x0D) return false;
+
+  // body without CR
+  size_t body_len = rx_len - 1;
+  if (body_len < 3) return false; // at least '(' + CRC(2)
+
+  uint8_t recv_crc_hi = rx[body_len - 2];
+  uint8_t recv_crc_lo = rx[body_len - 1];
+  // payload includes leading '('
+  size_t payload_len = body_len - 2;
+
+  uint16_t calc = crc16_xmodem(rx, payload_len);
+  uint8_t calc_hi = (calc >> 8) & 0xFF;
+  uint8_t calc_lo = calc & 0xFF;
+  adjust_crc_bytes(calc_hi, calc_lo);
+  bool crc_ok = (recv_crc_hi == calc_hi) && (recv_crc_lo == calc_lo);
+
+  if (!crc_ok) {
+    Serial.printf("[INV] CRC MISMATCH for cmd '%s' - recv: %02X %02X calc: %02X %02X\n",
+                  cmd.c_str(), recv_crc_hi, recv_crc_lo, calc_hi, calc_lo);
+    // Print raw response as hex
+    Serial.print("[INV] RX (hex): ");
+    for (size_t i = 0; i < rx_len; ++i) {
+      Serial.printf("%02X ", rx[i]);
+    }
+    Serial.println();
+    // Print raw response as ASCII (safely)
+    Serial.print("[INV] RX (ascii): ");
+    Serial.write(rx, rx_len);
+    Serial.println();
+    return false; // do not process further when CRC fails
+  }
+
+  // Validate leading '('
+  if (rx[0] != 0x28) return false; // '('
+
+  out_payload = String((const char*)(rx + 1), payload_len - 1);
+  return true;
+}
+
+// Parse QMOD payload (first char is code)
+static void parse_qmod_payload(const String &p) {
+  char code = p.length() ? p.charAt(0) : '\0';
+  const char* names[] = {"Power On","Standby","Line","Battery","Fault","Power saving","Unknown"};
+  const char map[] = {'P','S','L','B','F','H','?'};
+  const char* name = "Unknown";
+  for (size_t i = 0; i < sizeof(map); ++i) {
+    if (map[i] == code) { name = names[i]; break; }
+  }
+
+  if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
+  g_inverter_mode_code = code;
+  strncpy(g_inverter_mode_name, name, sizeof(g_inverter_mode_name)-1);
+  g_inverter_mode_name[sizeof(g_inverter_mode_name)-1] = '\0';
+  if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
+}
+
+// Parse QPIGS payload tokens and update g_inverter_status
+static void parse_qpigs_payload(const String &p) {
+  // tokens separated by spaces
+  const int MAX_TOK = 64;
+  String toks[MAX_TOK];
+  int tcount = 0;
+  int start = 0;
+  for (int i = 0; i <= (int)p.length() && tcount < MAX_TOK; ++i) {
+    if (i == (int)p.length() || p.charAt(i) == ' ') {
+      if (i - start > 0) {
+        toks[tcount++] = p.substring(start, i);
+      }
+      start = i + 1;
+    }
+  }
+
+  inverter_status_t s = {0};
+  s.ts_ms = millis();
+
+  auto tokf = [&](int idx)->String { return (idx < tcount) ? toks[idx] : String(""); };
+
+  // Parse according to doc order (best-effort, many devices use similar ordering)
+  if (tcount > 0) s.grid_voltage = tokf(0).toFloat();
+  if (tcount > 1) s.grid_frequency = tokf(1).toFloat();
+  if (tcount > 2) s.ac_out_voltage = tokf(2).toFloat();
+  if (tcount > 3) s.ac_out_frequency = tokf(3).toFloat();
+  if (tcount > 4) s.ac_apparent_va = tokf(4).toInt();
+  if (tcount > 5) s.ac_active_w = tokf(5).toInt();
+  if (tcount > 6) s.load_percent = tokf(6).toInt();
+  if (tcount > 7) s.bus_voltage = tokf(7).toFloat();
+  if (tcount > 8) s.batt_voltage = tokf(8).toFloat();
+  if (tcount > 9) s.batt_charge_current = tokf(9).toFloat();
+  if (tcount > 10) s.batt_soc = tokf(10).toInt();
+  if (tcount > 11) s.heatsink_temp = tokf(11).toFloat();
+  if (tcount > 12) s.pv_input_current = tokf(12).toFloat();
+  if (tcount > 13) s.pv_input_voltage = tokf(13).toFloat();
+  if (tcount > 14) s.batt_voltage_from_scc = tokf(14).toFloat();
+  if (tcount > 15) s.batt_discharge_current = tokf(15).toFloat();
+  if (tcount > 16) s.device_status_bits = (uint8_t)(tokf(16).toInt() & 0xFF);
+  if (tcount > 17) s.batt_fan_offset_10mv = tokf(17).toInt();
+  if (tcount > 18) s.eeprom_version = tokf(18).toInt();
+  if (tcount > 19) s.pv_charging_power = tokf(19).toInt();
+  if (tcount > 20) s.additional_status_bits = (uint8_t)(tokf(20).toInt() & 0xFF);
+
+  if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
+  g_inverter_status = s;
+  if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
+}
+
+// Print full status and mode to Serial (thread-safe snapshot)
+static void print_status_and_mode_snapshot() {
+  inverter_status_t s;
+  char mode_code = '\0';
+  char mode_name[32] = {0};
+
+  if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
+  s = g_inverter_status;
+  mode_code = g_inverter_mode_code;
+  strncpy(mode_name, g_inverter_mode_name, sizeof(mode_name)-1);
+  if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
+
+  Serial.println("--- Inverter Status Snapshot ---");
+  Serial.printf("Mode: %c (%s)\n", mode_code ? mode_code : '?', mode_name);
+  Serial.printf("Grid V: %.2f V, Grid F: %.2f Hz\n", s.grid_voltage, s.grid_frequency);
+  Serial.printf("AC Out V: %.2f V, AC Out F: %.2f Hz\n", s.ac_out_voltage, s.ac_out_frequency);
+  Serial.printf("Apparent VA: %d VA, Active W: %d W, Load %%: %d\n", s.ac_apparent_va, s.ac_active_w, s.load_percent);
+  Serial.printf("BUS V: %.2f V, Batt V: %.2f V, Batt Charge I: %.2f A, Batt SOC: %d %%\n", s.bus_voltage, s.batt_voltage, s.batt_charge_current, s.batt_soc);
+  Serial.printf("Heatsink: %.2f C, PV I: %.2f A, PV V: %.2f V\n", s.heatsink_temp, s.pv_input_current, s.pv_input_voltage);
+  Serial.printf("Batt V from SCC: %.2f V, Batt Disch I: %.2f A\n", s.batt_voltage_from_scc, s.batt_discharge_current);
+  Serial.printf("Device status bits: 0x%02X, Additional status bits: 0x%02X\n", s.device_status_bits, s.additional_status_bits);
+  Serial.printf("Batt fan offset: %d (10mV), EEPROM ver: %d, PV charging power: %d W\n", s.batt_fan_offset_10mv, s.eeprom_version, s.pv_charging_power);
+  Serial.printf("Timestamp: %u ms\n", (unsigned)s.ts_ms);
+  Serial.println("---------------------------------");
+}
+
+// Background task that queries QMOD and QPIGS periodically
+static void inverter_task(void* arg) {
+  (void)arg;
+  for (;;) {
+    // QMOD
+    String payload;
+    if (send_command_and_get_payload("QMOD", payload)) {
+      parse_qmod_payload(payload);
+    }
+
+    // QPIGS
+    payload = String();
+    if (send_command_and_get_payload("QPIGS", payload)) {
+      parse_qpigs_payload(payload);
+    }
+
+    // Print snapshot after each poll cycle
+    print_status_and_mode_snapshot();
+
+    vTaskDelay(pdMS_TO_TICKS(INVERTER_POLL_INTERVAL_MS));
+  }
+}
+
+void inverter_comm_init() {
+  if (!g_inv_mutex) {
+    g_inv_mutex = xSemaphoreCreateMutex();
+  }
+  // Initialize Serial1 for RS232 via MAX3232 at 2400 8N1
+  Serial1.begin(2400, SERIAL_8N1, INVERTER_RX_PIN, INVERTER_TX_PIN);
+
+  // Create background task
+  xTaskCreatePinnedToCore(
+    inverter_task,
+    "inverter_task",
+    4096,
+    NULL,
+    1,
+    NULL,
+    1);
+}
+
+bool inverter_get_status(inverter_status_t* out) {
+  if (!out) return false;
+  if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
+  *out = g_inverter_status;
+  if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
+  return true;
+}
+
+bool inverter_get_mode(char* out_code, char* out_name, size_t name_cap) {
+  if (out_code) {
+    if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
+    *out_code = g_inverter_mode_code;
+    if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
+  }
+  if (out_name && name_cap > 0) {
+    if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
+    strncpy(out_name, g_inverter_mode_name, name_cap - 1);
+    out_name[name_cap - 1] = '\0';
+    if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
+  }
+  return true;
+}

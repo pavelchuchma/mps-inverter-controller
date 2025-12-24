@@ -266,6 +266,7 @@ void wsEvent(uint8_t clientId, WStype_t type, uint8_t* payload, size_t length) {
 
 // --------- Embedded web UI helpers (LittleFS) ----------
 #include "esp_webserver.h"
+#include "inverter_comm.h"
 
 void connectToWiFi() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -329,6 +330,9 @@ void setup() {
   pinMode(pwmPin, OUTPUT);
   digitalWrite(pwmPin, LOW);
   Serial.println("HTTP :80, WS :81");
+
+  // Initialize inverter RS232 communication (background task)
+  inverter_comm_init();
 
   // Start a background task to broadcast WS status so slow clients won't block main loop
   xTaskCreatePinnedToCore(
