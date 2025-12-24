@@ -346,7 +346,7 @@ void setup() {
           size_t n = makeStatusJsonTo(buf, sizeof(buf));
           if (n > 0) ws.broadcastTXT((uint8_t*)buf, n);
           uint32_t t1 = millis();
-          if (t1 - t0 > 500) Serial.printf("[DIAG] wsBroadcastTask iteration took %ums\n", (unsigned)(t1 - t0));
+          if (t1 - t0 > 500) Serial.printf("[WARN] wsBroadcastTask iteration took %ums\n", (unsigned)(t1 - t0));
         }
         vTaskDelay(pdMS_TO_TICKS(1000));
       }
@@ -372,8 +372,8 @@ void loop() {
   // Log if these calls take unusually long (indicates blocking)
   uint32_t hdlDur = t1 - t0;
   uint32_t wsDur = t2 - t1;
-  if (hdlDur > 50) Serial.printf("[DIAG] server.handleClient() took %ums\n", hdlDur);
-  if (wsDur > 50) Serial.printf("[DIAG] ws.loop() took %ums\n", wsDur);
+  if (hdlDur > 50) Serial.printf("[WARN] server.handleClient() took %ums\n", hdlDur);
+  if (wsDur > 50) Serial.printf("[WARN] ws.loop() took %ums\n", wsDur);
 
   if (millis() - lastMock >= 250) {
     lastMock = millis();
@@ -391,14 +391,14 @@ void loop() {
 
   // Periodic diagnostics to catch memory/stack issues causing resets after hours
   static uint32_t lastDiag = 0;
-  if (millis() - lastDiag > 60000) { // every 60s
+  if (millis() - lastDiag > 600000) { // every 600s
     lastDiag = millis();
     size_t freeHeap = ESP.getFreeHeap();
     size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT);
-    Serial.printf("[DIAG] heap free=%u, largest=%u\n", (unsigned)freeHeap, (unsigned)largest);
+    Serial.printf("[WARN] heap free=%u, largest=%u\n", (unsigned)freeHeap, (unsigned)largest);
     if (g_wsTask) {
       UBaseType_t watermark = uxTaskGetStackHighWaterMark(g_wsTask);
-      Serial.printf("[DIAG] ws_bcast stack high watermark=%u words\n", (unsigned)watermark);
+      Serial.printf("[WARN] ws_bcast stack high watermark=%u words\n", (unsigned)watermark);
     }
   }
 }
