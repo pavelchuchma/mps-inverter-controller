@@ -332,7 +332,7 @@ void setup() {
   Serial.println("HTTP :80, WS :81");
 
   // Initialize inverter RS232 communication (background task)
-  inverter_comm_init();
+//  inverter_comm_init();
 
   // Start a background task to broadcast WS status so slow clients won't block main loop
   xTaskCreatePinnedToCore(
