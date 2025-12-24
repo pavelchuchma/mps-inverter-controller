@@ -10,6 +10,7 @@
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <stdarg.h>
 
 IPAddress apIP(192, 168, 4, 1);
 IPAddress netMsk(255, 255, 255, 0);
@@ -28,6 +29,33 @@ static inline void wsSend(uint8_t clientId, String s) {
 
 static inline void wsBroadcastTxt(String s) {
   ws.broadcastTXT(s);
+}
+
+// Format boot-relative milliseconds to HH:MM:SS.sss into provided buffer.
+static inline void formatBootTimeMs(char* buf, size_t cap, uint32_t ms) {
+  uint32_t total_ms = ms;
+  uint32_t total_sec = total_ms / 1000;
+  unsigned h = total_sec / 3600;
+  unsigned m = (total_sec % 3600) / 60;
+  unsigned s = total_sec % 60;
+  unsigned ms_part = total_ms % 1000;
+  if (cap > 0) {
+    snprintf(buf, cap, "%02u:%02u:%02u.%03u", h, m, s, ms_part);
+  }
+}
+
+// Print a WARN log with boot-relative timestamp. Accepts printf-style args.
+static inline void printWarning(const char* fmt, ...) {
+  char tbuf[16];
+  formatBootTimeMs(tbuf, sizeof(tbuf), millis());
+  char msg[384];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(msg, sizeof(msg), fmt, ap);
+  va_end(ap);
+  char out[420];
+  snprintf(out, sizeof(out), "[%s] [WARN] %s\n", tbuf, msg);
+  Serial.print(out);
 }
 
 // --------- App state ----------
@@ -346,7 +374,9 @@ void setup() {
           size_t n = makeStatusJsonTo(buf, sizeof(buf));
           if (n > 0) ws.broadcastTXT((uint8_t*)buf, n);
           uint32_t t1 = millis();
-          if (t1 - t0 > 500) Serial.printf("[WARN] wsBroadcastTask iteration took %ums\n", (unsigned)(t1 - t0));
+          if (t1 - t0 > 500) {
+            printWarning("wsBroadcastTask iteration took %ums", (unsigned)(t1 - t0));
+          }
         }
         vTaskDelay(pdMS_TO_TICKS(1000));
       }
@@ -372,8 +402,12 @@ void loop() {
   // Log if these calls take unusually long (indicates blocking)
   uint32_t hdlDur = t1 - t0;
   uint32_t wsDur = t2 - t1;
-  if (hdlDur > 50) Serial.printf("[WARN] server.handleClient() took %ums\n", hdlDur);
-  if (wsDur > 50) Serial.printf("[WARN] ws.loop() took %ums\n", wsDur);
+  if (hdlDur > 50) {
+    printWarning("server.handleClient() took %ums", hdlDur);
+  }
+  if (wsDur > 50) {
+    printWarning("ws.loop() took %ums", wsDur);
+  }
 
   if (millis() - lastMock >= 250) {
     lastMock = millis();
@@ -395,10 +429,10 @@ void loop() {
     lastDiag = millis();
     size_t freeHeap = ESP.getFreeHeap();
     size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT);
-    Serial.printf("[WARN] heap free=%u, largest=%u\n", (unsigned)freeHeap, (unsigned)largest);
+    printWarning("heap free=%u, largest=%u", (unsigned)freeHeap, (unsigned)largest);
     if (g_wsTask) {
       UBaseType_t watermark = uxTaskGetStackHighWaterMark(g_wsTask);
-      Serial.printf("[WARN] ws_bcast stack high watermark=%u words\n", (unsigned)watermark);
+      printWarning("ws_bcast stack high watermark=%u words", (unsigned)watermark);
     }
   }
 }
