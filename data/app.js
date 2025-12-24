@@ -10,6 +10,18 @@ function setConn(ok, msg){
   el.className = "pill " + (ok ? "ok" : "err");
 }
 
+// Format milliseconds (e.g. from millis()) to HH:MM:SS
+function formatMsToHMS(ms){
+  const totalSec = Math.floor(Number(ms || 0) / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  const hh = String(h).padStart(2, '0');
+  const mm = String(m).padStart(2, '0');
+  const ss = String(s).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+}
+
 let ws;
 let demoMode = false;
 const limEl = $("lim");
@@ -64,7 +76,7 @@ function connect(){
         $("load").textContent = Math.round(j.load_w);
         $("grid").textContent = j.grid_ok ? "OK" : "FAIL";
         $("state").textContent = j.state || "—";
-        $("ts").textContent = j.ts_ms;
+        $("ts").textContent = formatMsToHMS(j.ts_ms);
 
         if (!resetReasonLogged && (j.reset_reason !== undefined || j.reset_reason_str !== undefined)){
           const rr = (j.reset_reason_str || "").toString();
