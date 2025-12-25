@@ -2,7 +2,6 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <ESPmDNS.h>
-#include <WebSocketsServer.h>
 #include <ArduinoJson.h>
 #include <cmath>
 #include "credentials.h"
@@ -17,20 +16,6 @@ IPAddress apIP(192, 168, 4, 1);
 IPAddress netMsk(255, 255, 255, 0);
 
 WebServer server(80);
-WebSocketsServer ws(81);
-
-// Track connected WS clients to avoid broadcasting when nobody is listening
-static int g_wsClientCount = 0;
-static TaskHandle_t g_wsTask = nullptr; // handle WS broadcast task for diagnostics
-
-// WS helpers: accept by-value so callers can pass rvalues (makeStatusJson())
-static inline void wsSend(uint8_t clientId, String s) {
-  ws.sendTXT(clientId, s);
-}
-
-static inline void wsBroadcastTxt(String s) {
-  ws.broadcastTXT(s);
-}
 
 // Format boot-relative milliseconds to HH:MM:SS.sss into provided buffer.
 static inline void formatBootTimeMs(char* buf, size_t cap, uint32_t ms) {
@@ -154,11 +139,8 @@ String makeStatusJson() {
 size_t makeStatusJsonTo(char* buf, size_t cap) {
   // Reserve a static doc to avoid heap churn. Size estimate ~300B; use headroom.
   // Potlačení deprecation warningu pro StaticJsonDocument pouze zde
-  #pragma GCC diagnostic push
-  #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   // Increased capacity to accommodate longer reset_reason_str descriptions
-  StaticJsonDocument<768> doc;
-  #pragma GCC diagnostic pop
+  JsonDocument doc;
   doc["type"] = "status";
   doc["pv_w"] = (int)round(g.pv_w);
   doc["batt_soc"] = g.batt_soc;
@@ -194,17 +176,6 @@ String makeErrJson(const char* code, const char* msg) {
   String out;
   serializeJson(doc, out);
   return out;
-}
-
-// --------- WebSocket broadcast ----------
-void wsBroadcastStatus() {
-  if (g_wsClientCount <= 0) return; // nothing to send
-  // Use fixed buffer to avoid dynamic allocation of String
-  static char buf[512];
-  size_t n = makeStatusJsonTo(buf, sizeof(buf));
-  if (n > 0) {
-    ws.broadcastTXT((uint8_t*)buf, n);
-  }
 }
 
 // --------- Command handling ----------
@@ -244,61 +215,30 @@ String handleCommand(JsonDocument& doc) {
   return makeErrJson("unknown_cmd", "Unknown command name");
 }
 
-// --------- WS events ----------
-void wsEvent(uint8_t clientId, WStype_t type, uint8_t* payload, size_t length) {
-  switch (type) {
-  case WStype_CONNECTED: {
-    IPAddress ip = ws.remoteIP(clientId);
-    Serial.printf("[WS] Client %u connected from %s\n", clientId, ip.toString().c_str());
-    ++g_wsClientCount;
-    // Send initial status using fixed buffer to minimize heap churn
-    static char buf[512];
-    size_t n = makeStatusJsonTo(buf, sizeof(buf));
-    if (n > 0) {
-      ws.sendTXT(clientId, (uint8_t*)buf, n);
-    }
-    break;
+// --------- HTTP API handlers (status + command via POST) ---------
+void handleStatus() {
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  server.sendHeader("Pragma", "no-cache");
+  server.sendHeader("Expires", "-1");
+  String s = makeStatusJson();
+  server.send(200, "application/json", s);
+}
+
+void handleCmdHttp() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", makeErrJson("bad_request", "Missing body"));
+    return;
   }
-  case WStype_DISCONNECTED:
-    Serial.printf("[WS] Client %u disconnected\n", clientId);
-    if (g_wsClientCount > 0) --g_wsClientCount;
-    break;
-
-  case WStype_TEXT: {
-    // Parse incoming JSON
-    JsonDocument doc;
-    Serial.print("[WS RX] ");
-    Serial.write(payload, length);
-    Serial.println();
-    DeserializationError err = deserializeJson(doc, (const char*)payload, length);
-    if (err) {
-      wsSend(clientId, makeErrJson("json_parse", err.c_str()));
-      return;
-    }
-
-    const char* msgType = doc["type"] | "";
-    if (strcmp(msgType, "hello") == 0) {
-      wsSend(clientId, makeAckJson("hello"));
-      wsSend(clientId, makeStatusJson());
-      return;
-    }
-
-    if (strcmp(msgType, "cmd") == 0) {
-      String reply = handleCommand(doc);
-      wsSend(clientId, reply);
-
-      // Optionally push fresh status right after a command
-      wsBroadcastStatus();
-      return;
-    }
-
-    wsSend(clientId, makeErrJson("bad_request", "Unknown message type"));
-    break;
+  String body = server.arg("plain");
+  // Parse JSON body
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, body);
+  if (err) {
+    server.send(400, "application/json", makeErrJson("json_parse", err.c_str()));
+    return;
   }
-
-  default:
-    break;
-  }
+  String reply = handleCommand(doc);
+  server.send(200, "application/json", reply);
 }
 
 // --------- Embedded web UI helpers (LittleFS) ----------
@@ -356,48 +296,20 @@ void setup() {
   initializeWiFi();
 
   server.on("/", HTTP_GET, handleRoot);
+  // HTTP API for polling UI
+  server.on("/status", HTTP_GET, handleStatus);
+  server.on("/cmd", HTTP_POST, handleCmdHttp);
 
   server.onNotFound(handleNotFound);
   server.begin();
 
-  ws.begin();
-  ws.onEvent(wsEvent);
-  // Enable heartbeat to drop dead clients and free resources automatically
-  // ping every 15s, expect pong within 3s, drop after 2 missed pongs
-  ws.enableHeartbeat(15000, 3000, 2);
   // Setup PWM output pin
   pinMode(pwmPin, OUTPUT);
   digitalWrite(pwmPin, LOW);
-  Serial.println("HTTP :80, WS :81");
+  Serial.println("HTTP :80");
 
   // Initialize inverter RS232 communication (background task)
 //  inverter_comm_init();
-
-  // Start a background task to broadcast WS status so slow clients won't block main loop
-  xTaskCreatePinnedToCore(
-    [](void*) { // task lambda
-      for (;;) {
-        if (g_wsClientCount > 0) {
-          uint32_t t0 = millis();
-          // Broadcast using fixed buffer to avoid heap fragmentation
-          // Buffer for JSON broadcast; increased to fit extended reset reason strings
-          static char buf[768];
-          size_t n = makeStatusJsonTo(buf, sizeof(buf));
-          if (n > 0) ws.broadcastTXT((uint8_t*)buf, n);
-          uint32_t t1 = millis();
-          if (t1 - t0 > 500) {
-            printWarning("wsBroadcastTask iteration took %ums", (unsigned)(t1 - t0));
-          }
-        }
-        vTaskDelay(pdMS_TO_TICKS(1000));
-      }
-    },
-    "ws_bcast",
-    4096,
-    NULL,
-    1,
-    &g_wsTask,
-    1);
 }
 
 uint32_t lastMock = 0;
@@ -407,17 +319,11 @@ void loop() {
   uint32_t t0 = millis();
   server.handleClient();
   uint32_t t1 = millis();
-  ws.loop();
-  uint32_t t2 = millis();
 
-  // Log if these calls take unusually long (indicates blocking)
+  // Log if handleClient takes unusually long (indicates blocking)
   uint32_t hdlDur = t1 - t0;
-  uint32_t wsDur = t2 - t1;
-  if (hdlDur > 50) {
+  if (hdlDur > 100) {
     printWarning("server.handleClient() took %ums", hdlDur);
-  }
-  if (wsDur > 50) {
-    printWarning("ws.loop() took %ums", wsDur);
   }
 
   if (millis() - lastMock >= 250) {
@@ -441,9 +347,5 @@ void loop() {
     size_t freeHeap = ESP.getFreeHeap();
     size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT);
     printWarning("heap free=%u, largest=%u", (unsigned)freeHeap, (unsigned)largest);
-    if (g_wsTask) {
-      UBaseType_t watermark = uxTaskGetStackHighWaterMark(g_wsTask);
-      printWarning("ws_bcast stack high watermark=%u words", (unsigned)watermark);
-    }
   }
 }
