@@ -309,7 +309,7 @@ void setup() {
   Serial.println("HTTP :80");
 
   // Initialize inverter RS232 communication (background task)
-//  inverter_comm_init();
+ inverter_comm_init();
 }
 
 uint32_t lastMock = 0;

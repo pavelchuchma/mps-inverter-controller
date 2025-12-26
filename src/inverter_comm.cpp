@@ -61,6 +61,33 @@ static size_t read_until_cr(HardwareSerial &s, uint8_t* buf, size_t max_len, uns
   return idx;
 }
 
+// Debug helper: print payload (between '(' and CRC), raw hex and ASCII
+static void debug_print_rx(const uint8_t* rx, size_t rx_len) {
+  if (!rx || rx_len == 0) return;
+
+  bool has_cr = (rx[rx_len - 1] == 0x0D);
+  size_t body_len = has_cr ? (rx_len - 1) : rx_len;
+  if (body_len >= 3 && rx[0] == 0x28) {
+    size_t payload_len_with_paren = body_len - 2; // includes leading '('
+    size_t payload_ascii_len = (payload_len_with_paren > 0) ? payload_len_with_paren - 1 : 0;
+    if (payload_ascii_len > 0) {
+      String payload_str((const char*)(rx + 1), payload_ascii_len);
+      Serial.print("[INV] RX (payload): ");
+      Serial.println(payload_str);
+    }
+  }
+
+  Serial.print("[INV] RX (hex): ");
+  for (size_t i = 0; i < rx_len; ++i) {
+    Serial.printf("%02X ", rx[i]);
+  }
+  Serial.println();
+
+  Serial.print("[INV] RX (ascii): ");
+  Serial.write(rx, rx_len);
+  Serial.println();
+}
+
 // Send ASCII command and read response. Returns payload (inside '('.. ).
 // On CRC mismatch the function prints the raw response and returns false.
 static bool send_command_and_get_payload(const String &cmd, String &out_payload) {
@@ -68,6 +95,7 @@ static bool send_command_and_get_payload(const String &cmd, String &out_payload)
   uint8_t tx[128];
   size_t tx_len = 0;
   build_frame(cmd, tx, tx_len);
+  Serial.printf("[INV] TX cmd: %s\n", cmd.c_str()); 
 
   // Flush RX and TX buffers
   while (ser.available()) ser.read();
@@ -77,14 +105,26 @@ static bool send_command_and_get_payload(const String &cmd, String &out_payload)
   // Wait for response up to 1000ms
   uint8_t rx[512];
   size_t rx_len = read_until_cr(ser, rx, sizeof(rx), 1000);
-  if (rx_len == 0) return false;
+  if (rx_len == 0) {
+    Serial.printf("[INV] No response for cmd '%s'\n", cmd.c_str());
+    return false;
+  }
 
   // Response should end with CR
-  if (rx[rx_len-1] != 0x0D) return false;
+  if (rx[rx_len-1] != 0x0D) {
+    Serial.printf("[INV] Incomplete response for cmd '%s' (no CR)\n", cmd.c_str());
+    return false;
+  }
+
+  // Print raw response immediately for debugging (before CRC check)
+  debug_print_rx(rx, rx_len);
 
   // body without CR
   size_t body_len = rx_len - 1;
-  if (body_len < 3) return false; // at least '(' + CRC(2)
+  if (body_len < 3) {
+    Serial.printf("[INV] Response too short for cmd '%s'\n", cmd.c_str());
+    return false; // at least '(' + CRC(2)
+  }
 
   uint8_t recv_crc_hi = rx[body_len - 2];
   uint8_t recv_crc_lo = rx[body_len - 1];
@@ -100,16 +140,8 @@ static bool send_command_and_get_payload(const String &cmd, String &out_payload)
   if (!crc_ok) {
     Serial.printf("[INV] CRC MISMATCH for cmd '%s' - recv: %02X %02X calc: %02X %02X\n",
                   cmd.c_str(), recv_crc_hi, recv_crc_lo, calc_hi, calc_lo);
-    // Print raw response as hex
-    Serial.print("[INV] RX (hex): ");
-    for (size_t i = 0; i < rx_len; ++i) {
-      Serial.printf("%02X ", rx[i]);
-    }
-    Serial.println();
-    // Print raw response as ASCII (safely)
-    Serial.print("[INV] RX (ascii): ");
-    Serial.write(rx, rx_len);
-    Serial.println();
+    // Print raw response (single helper)
+    debug_print_rx(rx, rx_len);
     return false; // do not process further when CRC fails
   }
 
