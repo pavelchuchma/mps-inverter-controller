@@ -63,8 +63,13 @@ async function send(obj){
 }
 
 async function fetchStatus(){
+  // Add a 1s timeout to the status fetch
+  const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  const to = setTimeout(() => {
+    try{ ctrl && ctrl.abort(); }catch(_){/* noop */}
+  }, 1000);
   try{
-    const resp = await fetch('/status', { cache: 'no-store' });
+    const resp = await fetch('/status', { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
     if (!resp.ok) {
       setConn(false, `HTTP ${resp.status}`);
       logln(`HTTP status ${resp.status}`);
@@ -111,8 +116,15 @@ async function fetchStatus(){
     }
     logln("MSG: " + JSON.stringify(j));
   }catch(e){
-    setConn(false, "Fetch error");
-    logln("Fetch error: " + e);
+    if (e && (e.name === 'AbortError' || e.code === 20)){
+      setConn(false, "Timeout 1s");
+      logln("Fetch timeout (1s)");
+    } else {
+      setConn(false, "Fetch error");
+      logln("Fetch error: " + e);
+    }
+  } finally {
+    clearTimeout(to);
   }
 }
 
