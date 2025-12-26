@@ -2,14 +2,7 @@
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
-
-// Default UART pins for Serial1 (MAX3232). Change if your wiring differs.
-#ifndef INVERTER_RX_PIN
-#define INVERTER_RX_PIN 16
-#endif
-#ifndef INVERTER_TX_PIN
-#define INVERTER_TX_PIN 17
-#endif
+#include "config.h"
 
 // Polling interval (ms) between QMOD+QPIGS cycles
 #define INVERTER_POLL_INTERVAL_MS 3000

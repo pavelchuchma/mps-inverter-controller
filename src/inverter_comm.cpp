@@ -95,7 +95,6 @@ static bool send_command_and_get_payload(const String &cmd, String &out_payload)
   uint8_t tx[128];
   size_t tx_len = 0;
   build_frame(cmd, tx, tx_len);
-  Serial.printf("[INV] TX cmd: %s\n", cmd.c_str()); 
 
   // Flush RX and TX buffers
   while (ser.available()) ser.read();
@@ -117,7 +116,7 @@ static bool send_command_and_get_payload(const String &cmd, String &out_payload)
   }
 
   // Print raw response immediately for debugging (before CRC check)
-  debug_print_rx(rx, rx_len);
+  // debug_print_rx(rx, rx_len);
 
   // body without CR
   size_t body_len = rx_len - 1;

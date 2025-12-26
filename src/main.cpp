@@ -5,6 +5,7 @@
 #include <ArduinoJson.h>
 #include <cmath>
 #include "credentials.h"
+#include "config.h"
 #include <esp_system.h>
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
@@ -89,8 +90,6 @@ static const char* resetReasonToStr(esp_reset_reason_t r){
 bool demoMode = true;
 int outputLimitW = 2000; // example “control” value (mock)
 float outputDutyCycle = 0.0f; // 0.0 - 1.0 (represented as percent in UI)
-// PWM-capable GPIO25
-const int pwmPin = 25; // change if you want a different output-capable pin
 
 // --------- Mock status generation ----------
 void updateMock() {
@@ -244,6 +243,7 @@ void handleCmdHttp() {
 // --------- Embedded web UI helpers (LittleFS) ----------
 #include "esp_webserver.h"
 #include "inverter_comm.h"
+#include "display.h"
 
 void connectToWiFi() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -304,12 +304,14 @@ void setup() {
   server.begin();
 
   // Setup PWM output pin
-  pinMode(pwmPin, OUTPUT);
-  digitalWrite(pwmPin, LOW);
+  pinMode(PWM_PIN, OUTPUT);
+  digitalWrite(PWM_PIN, LOW);
   Serial.println("HTTP :80");
 
   // Initialize inverter RS232 communication (background task)
  inverter_comm_init();
+  // Initialize QC1602A display (4-bit wiring)
+  display_init();
 }
 
 uint32_t lastMock = 0;
@@ -329,14 +331,16 @@ void loop() {
   if (millis() - lastMock >= 250) {
     lastMock = millis();
     updateMock();
+    // Update LCD first line with current battery SOC from mock data
+    display_update_batt_soc(g.batt_soc);
   }
 
-  // Software PWM: period 2000 ms (2s). Drive `pwmPin` HIGH for
+  // Software PWM: period 2000 ms (2s). Drive `PWM_PIN` HIGH for
   // outputDutyCycle * period, otherwise LOW. `outputDutyCycle` is 0.0-1.0.
   const uint32_t pwmPeriodMs = 2000;
   uint32_t phase = millis() % pwmPeriodMs;
   uint32_t onTime = (uint32_t)round(outputDutyCycle * (float)pwmPeriodMs);
-  digitalWrite(pwmPin, (phase < onTime) ? HIGH : LOW);
+  digitalWrite(PWM_PIN, (phase < onTime) ? HIGH : LOW);
   // Small yield to allow WiFi/RTOS background tasks to run and avoid starvation
   delay(5);
 
