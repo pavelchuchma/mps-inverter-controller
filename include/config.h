@@ -19,3 +19,12 @@
 
 // --- PWM output ---
 #define PWM_PIN 25
+
+// --- Capacitive touch inputs (ESP32 Touch0–Touch3) ---
+// Mapped in code as Button0–Button3
+// Note: On ESP32, Touch0..3 correspond to GPIO4, GPIO0, GPIO2, GPIO15 respectively.
+// Some of these are strapping pins (0, 2, 15) — ensure your hardware accounts for this.
+#define BUTTON0_TOUCH T0  // Touch0 (GPIO4)
+#define BUTTON1_TOUCH T1  // Touch1 (GPIO0)
+#define BUTTON2_TOUCH T2  // Touch2 (GPIO2)
+#define BUTTON3_TOUCH T3  // Touch3 (GPIO15)

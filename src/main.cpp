@@ -316,6 +316,7 @@ void setup() {
 
 uint32_t lastMock = 0;
 uint32_t lastPush = 0;
+static uint32_t lastButton0Sample = 0;
 
 void loop() {
   uint32_t t0 = millis();
@@ -333,6 +334,13 @@ void loop() {
     updateMock();
     // Update LCD first line with current battery SOC from mock data
     display_update_batt_soc(g.batt_soc);
+  }
+
+  // Read capacitive touch Button0 (Touch0) once per second and show on LCD line 2
+  if (millis() - lastButton0Sample >= 1000) {
+    lastButton0Sample = millis();
+    uint16_t btn0 = touchRead(BUTTON0_TOUCH);
+    display_update_button0(btn0);
   }
 
   // Software PWM: period 2000 ms (2s). Drive `PWM_PIN` HIGH for

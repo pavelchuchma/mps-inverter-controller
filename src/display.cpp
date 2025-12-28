@@ -27,3 +27,16 @@ void display_update_batt_soc(float soc) {
   lcd.setCursor(0, 0);
   lcd.print(buf);
 }
+
+void display_update_button0(uint16_t value) {
+  char buf[17];
+  // Example: "Button0:  1234"
+  int n = snprintf(buf, sizeof(buf), "Button0: %5u", (unsigned)value);
+  if (n < 0) return;
+  if (n > 16) n = 16;
+  for (int i = n; i < 16; ++i) buf[i] = ' ';
+  buf[16] = '\0';
+
+  lcd.setCursor(0, 1);
+  lcd.print(buf);
+}
