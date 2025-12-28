@@ -17,6 +17,10 @@
 #define LCD_D6 5
 #define LCD_D7 23
 
+// LCD backlight control (via NPN transistor)
+// Connected to GPIO26; drive HIGH to turn backlight ON, LOW to turn OFF.
+#define LCD_BACKLIGHT_PIN 26
+
 // --- PWM output ---
 #define PWM_PIN 25
 
@@ -28,3 +32,8 @@
 #define BUTTON1_TOUCH T1  // Touch1 (GPIO0)
 #define BUTTON2_TOUCH T2  // Touch2 (GPIO2)
 #define BUTTON3_TOUCH T3  // Touch3 (GPIO15)
+
+// Touch threshold for detecting a "press" on Button0.
+// Raw values vary by board/environment; adjust after observing `display_update_button0` readings.
+// Backlight is activated for 5s on a falling-below-threshold edge.
+#define BUTTON0_TOUCH_THRESHOLD 35

@@ -306,6 +306,9 @@ void setup() {
   // Setup PWM output pin
   pinMode(PWM_PIN, OUTPUT);
   digitalWrite(PWM_PIN, LOW);
+  // Setup LCD backlight control pin (active HIGH)
+  pinMode(LCD_BACKLIGHT_PIN, OUTPUT);
+  digitalWrite(LCD_BACKLIGHT_PIN, LOW); // start with backlight OFF
   Serial.println("HTTP :80");
 
   // Initialize inverter RS232 communication (background task)
@@ -317,6 +320,10 @@ void setup() {
 uint32_t lastMock = 0;
 uint32_t lastPush = 0;
 static uint32_t lastButton0Sample = 0;
+// --- Backlight control state ---
+static uint32_t lastTouchScanMs = 0;
+static bool btn0Pressed = false;           // debounced/latched state
+static uint32_t backlightOffAtMs = 0;      // 0 means OFF (or no timer scheduled)
 
 void loop() {
   uint32_t t0 = millis();
@@ -341,6 +348,29 @@ void loop() {
     lastButton0Sample = millis();
     uint16_t btn0 = touchRead(BUTTON0_TOUCH);
     display_update_button0(btn0);
+  }
+
+  // Fast scan Button0 to toggle LCD backlight for 5 seconds on press
+  // Note: touchRead() values are LOWER when pressed; threshold is configurable.
+  if (millis() - lastTouchScanMs >= 50) { // ~20 Hz scanning
+    lastTouchScanMs = millis();
+    uint16_t raw = touchRead(BUTTON0_TOUCH);
+    bool nowPressed = (raw <= BUTTON0_TOUCH_THRESHOLD);
+    // Rising edge: not pressed -> pressed
+    if (!btn0Pressed && nowPressed) {
+      // Turn backlight ON and (re)start 5s timer
+      digitalWrite(LCD_BACKLIGHT_PIN, HIGH);
+      backlightOffAtMs = millis() + 5000u;
+    }
+    btn0Pressed = nowPressed;
+  }
+
+  // Timer-driven backlight OFF
+  if (backlightOffAtMs != 0) {
+    if ((int32_t)(millis() - backlightOffAtMs) >= 0) {
+      digitalWrite(LCD_BACKLIGHT_PIN, LOW);
+      backlightOffAtMs = 0;
+    }
   }
 
   // Software PWM: period 2000 ms (2s). Drive `PWM_PIN` HIGH for
