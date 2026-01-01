@@ -8,7 +8,7 @@
 #define INVERTER_POLL_INTERVAL_MS 3000
 
 // Parsed status structure (subset of QPIGS fields)
-typedef struct {
+struct InverterState {
   float grid_voltage;           // BBB.B  Grid voltage [V]
   float grid_frequency;         // CC.C   Grid frequency [Hz]
   float ac_out_voltage;         // DDD.D  AC output voltage [V]
@@ -31,10 +31,10 @@ typedef struct {
   int   pv_charging_power;      // MMMMM  PV charging power [W]
   uint8_t additional_status_bits;// b10..b8 Additional status bits (b10 charging to float flag, b9 Switch On, b8 reserved)
   uint32_t ts_ms;               // timestamp (millis) when these values were last updated
-} inverter_status_t;
+};
 
 // Global variables (updated by background task)
-extern inverter_status_t g_inverter_status;
+extern InverterState g_inverter_status;
 extern char g_inverter_mode_code; // single-letter mode code from QMOD
 extern char g_inverter_mode_name[32];
 
@@ -42,5 +42,5 @@ extern char g_inverter_mode_name[32];
 void inverter_comm_init();
 
 // Access functions that copy protected data (thread-safe)
-bool inverter_get_status(inverter_status_t* out);
+bool inverter_get_status(InverterState* out);
 bool inverter_get_mode(char* out_code, char* out_name, size_t name_cap);

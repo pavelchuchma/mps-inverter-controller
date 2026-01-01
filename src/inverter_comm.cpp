@@ -3,7 +3,7 @@
 
 static SemaphoreHandle_t g_inv_mutex = NULL;
 
-inverter_status_t g_inverter_status = {0};
+InverterState g_inverter_status = {0};
 char g_inverter_mode_code = '\0';
 char g_inverter_mode_name[32] = "Unknown";
 
@@ -184,7 +184,7 @@ static void parse_qpigs_payload(const String &p) {
     }
   }
 
-  inverter_status_t s = {0};
+  InverterState s = {0};
   s.ts_ms = millis();
 
   auto tokf = [&](int idx)->String { return (idx < tcount) ? toks[idx] : String(""); };
@@ -219,7 +219,7 @@ static void parse_qpigs_payload(const String &p) {
 
 // Print full status and mode to Serial (thread-safe snapshot)
 static void print_status_and_mode_snapshot() {
-  inverter_status_t s;
+  InverterState s;
   char mode_code = '\0';
   char mode_name[32] = {0};
 
@@ -284,7 +284,7 @@ void inverter_comm_init() {
     1);
 }
 
-bool inverter_get_status(inverter_status_t* out) {
+bool inverter_get_status(InverterState* out) {
   if (!out) return false;
   if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
   *out = g_inverter_status;
