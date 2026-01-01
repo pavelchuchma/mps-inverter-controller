@@ -6,6 +6,11 @@
 This project implements an ESP32-based Wi‑Fi Access Point that serves a web
 dashboard showing live photovoltaic inverter data.
 
+### Language Contract
+- Source code comments: English (required)
+- Identifiers, log messages, commit messages, and documentation within the codebase: English (required)
+- UI-facing strings: Czech (allowed/preferred)
+
 Current state:
 - Data are **mocked**
 - Dashboard updates via **WebSocket push**
