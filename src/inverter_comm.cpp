@@ -1,9 +1,12 @@
 #include "inverter_comm.h"
 #include <HardwareSerial.h>
 
+// demoMode is defined in main.cpp; when true we should mock data
+extern bool demoMode;
+
 static SemaphoreHandle_t g_inv_mutex = NULL;
 
-InverterState g_inverter_status = {0};
+InverterState g_inverter_status = { 0 };
 char g_inverter_mode_code = '\0';
 char g_inverter_mode_name[32] = "Unknown";
 
@@ -20,17 +23,17 @@ static uint16_t crc16_xmodem(const uint8_t* data, size_t len) {
   return crc & 0xFFFF;
 }
 
-static void adjust_crc_bytes(uint8_t &hi, uint8_t &lo) {
+static void adjust_crc_bytes(uint8_t& hi, uint8_t& lo) {
   // Device increments reserved values 0x28 '(' , 0x0D CR, 0x0A LF
-  const uint8_t RESERVED[] = {0x28, 0x0D, 0x0A};
-  for (uint8_t r: RESERVED) {
+  const uint8_t RESERVED[] = { 0x28, 0x0D, 0x0A };
+  for (uint8_t r : RESERVED) {
     if (hi == r) hi = (hi + 1) & 0xFF;
     if (lo == r) lo = (lo + 1) & 0xFF;
   }
 }
 
 // Build frame: payload ASCII + CRC(hi,lo adjusted) + CR
-static void build_frame(const String &payload, uint8_t *out, size_t &out_len) {
+static void build_frame(const String& payload, uint8_t* out, size_t& out_len) {
   size_t plen = payload.length();
   memcpy(out, (const char*)payload.c_str(), plen);
   uint16_t crc = crc16_xmodem((const uint8_t*)payload.c_str(), plen);
@@ -44,7 +47,7 @@ static void build_frame(const String &payload, uint8_t *out, size_t &out_len) {
 }
 
 // Read from Serial1 until CR or timeout. Returns length in bytes stored in buf.
-static size_t read_until_cr(HardwareSerial &s, uint8_t* buf, size_t max_len, unsigned long timeout_ms) {
+static size_t read_until_cr(HardwareSerial& s, uint8_t* buf, size_t max_len, unsigned long timeout_ms) {
   size_t idx = 0;
   unsigned long start = millis();
   while (idx < max_len) {
@@ -90,8 +93,8 @@ static void debug_print_rx(const uint8_t* rx, size_t rx_len) {
 
 // Send ASCII command and read response. Returns payload (inside '('.. ).
 // On CRC mismatch the function prints the raw response and returns false.
-static bool send_command_and_get_payload(const String &cmd, String &out_payload) {
-  HardwareSerial &ser = Serial1;
+static bool send_command_and_get_payload(const String& cmd, String& out_payload) {
+  HardwareSerial& ser = Serial1;
   uint8_t tx[128];
   size_t tx_len = 0;
   build_frame(cmd, tx, tx_len);
@@ -110,7 +113,7 @@ static bool send_command_and_get_payload(const String &cmd, String &out_payload)
   }
 
   // Response should end with CR
-  if (rx[rx_len-1] != 0x0D) {
+  if (rx[rx_len - 1] != 0x0D) {
     Serial.printf("[INV] Incomplete response for cmd '%s' (no CR)\n", cmd.c_str());
     return false;
   }
@@ -138,7 +141,7 @@ static bool send_command_and_get_payload(const String &cmd, String &out_payload)
 
   if (!crc_ok) {
     Serial.printf("[INV] CRC MISMATCH for cmd '%s' - recv: %02X %02X calc: %02X %02X\n",
-                  cmd.c_str(), recv_crc_hi, recv_crc_lo, calc_hi, calc_lo);
+      cmd.c_str(), recv_crc_hi, recv_crc_lo, calc_hi, calc_lo);
     // Print raw response (single helper)
     debug_print_rx(rx, rx_len);
     return false; // do not process further when CRC fails
@@ -152,10 +155,10 @@ static bool send_command_and_get_payload(const String &cmd, String &out_payload)
 }
 
 // Parse QMOD payload (first char is code)
-static void parse_qmod_payload(const String &p) {
+static void parse_qmod_payload(const String& p) {
   char code = p.length() ? p.charAt(0) : '\0';
-  const char* names[] = {"Power On","Standby","Line","Battery","Fault","Power saving","Unknown"};
-  const char map[] = {'P','S','L','B','F','H','?'};
+  const char* names[] = { "Power On","Standby","Line","Battery","Fault","Power saving","Unknown" };
+  const char map[] = { 'P','S','L','B','F','H','?' };
   const char* name = "Unknown";
   for (size_t i = 0; i < sizeof(map); ++i) {
     if (map[i] == code) { name = names[i]; break; }
@@ -163,13 +166,13 @@ static void parse_qmod_payload(const String &p) {
 
   if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
   g_inverter_mode_code = code;
-  strncpy(g_inverter_mode_name, name, sizeof(g_inverter_mode_name)-1);
-  g_inverter_mode_name[sizeof(g_inverter_mode_name)-1] = '\0';
+  strncpy(g_inverter_mode_name, name, sizeof(g_inverter_mode_name) - 1);
+  g_inverter_mode_name[sizeof(g_inverter_mode_name) - 1] = '\0';
   if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
 }
 
 // Parse QPIGS payload tokens and update g_inverter_status
-static void parse_qpigs_payload(const String &p) {
+static void parse_qpigs_payload(const String& p) {
   // tokens separated by spaces
   const int MAX_TOK = 64;
   String toks[MAX_TOK];
@@ -184,7 +187,7 @@ static void parse_qpigs_payload(const String &p) {
     }
   }
 
-  InverterState s = {0};
+  InverterState s = { 0 };
   s.ts_ms = millis();
 
   auto tokf = [&](int idx)->String { return (idx < tcount) ? toks[idx] : String(""); };
@@ -221,12 +224,12 @@ static void parse_qpigs_payload(const String &p) {
 static void print_status_and_mode_snapshot() {
   InverterState s;
   char mode_code = '\0';
-  char mode_name[32] = {0};
+  char mode_name[32] = { 0 };
 
   if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
   s = g_inverter_status;
   mode_code = g_inverter_mode_code;
-  strncpy(mode_name, g_inverter_mode_name, sizeof(mode_name)-1);
+  strncpy(mode_name, g_inverter_mode_name, sizeof(mode_name) - 1);
   if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
 
   Serial.println("--- Inverter Status Snapshot ---");
@@ -243,24 +246,56 @@ static void print_status_and_mode_snapshot() {
   Serial.println("---------------------------------");
 }
 
+// Demo-mode mock tick: updates only selected properties and timestamp.
+// Thread-safe: reads previous state under mutex, modifies required fields, writes back.
+static void inverter_mock_tick() {
+  InverterState s;
+  if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
+  s = g_inverter_status; // start from last state to preserve other fields
+  if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
+
+  static float t = 0.0f;
+  t += 0.12f;
+
+  // Mock required properties
+  s.grid_voltage = 230.0f + 5.0f * sinf(t * 0.7f);
+  s.load_percent = (int)(35 + 25 * (sinf(t * 0.5f) * 0.5f + 0.5f));
+  s.batt_voltage = 52.1f + 0.45f * sinf(t * 0.6f);
+  s.batt_charge_current = 8.0f + 3.0f * sinf(t * 0.9f);
+  s.batt_soc = (int)(60 + 12 * sinf(t * 0.25f));
+  s.pv_input_current = 10.0f + 4.0f * sinf(t);
+  s.pv_input_voltage = 280.0f + 15.0f * sinf(t * 0.4f);
+  s.pv_charging_power = (int)(1350 + 300 * sinf(t));
+  s.ts_ms = millis();
+
+  if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
+  g_inverter_status = s;
+  if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
+}
+
 // Background task that queries QMOD and QPIGS periodically
 static void inverter_task(void* arg) {
   (void)arg;
   for (;;) {
-    // QMOD
-    String payload;
-    if (send_command_and_get_payload("QMOD", payload)) {
-      parse_qmod_payload(payload);
-    }
+    if (demoMode) {
+      inverter_mock_tick();
+    } else {
+      // Real mode: query inverter
+      // QMOD
+      String payload;
+      if (send_command_and_get_payload("QMOD", payload)) {
+        parse_qmod_payload(payload);
+      }
 
-    // QPIGS
-    payload = String();
-    if (send_command_and_get_payload("QPIGS", payload)) {
-      parse_qpigs_payload(payload);
-    }
+      // QPIGS
+      payload = String();
+      if (send_command_and_get_payload("QPIGS", payload)) {
+        parse_qpigs_payload(payload);
+      }
 
-    // Print snapshot after each poll cycle
-    print_status_and_mode_snapshot();
+      // Print snapshot after each poll cycle
+      print_status_and_mode_snapshot();
+    }
 
     vTaskDelay(pdMS_TO_TICKS(INVERTER_POLL_INTERVAL_MS));
   }

@@ -3,10 +3,12 @@
 #include <WebServer.h>
 #include <ESPmDNS.h>
 #include <ArduinoJson.h>
-#include <cmath>
 #include "credentials.h"
 #include "config.h"
 #include "thermistor.h"
+#include "esp_webserver.h"
+#include "display.h"
+#include "inverter_comm.h"
 #include <esp_system.h>
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
@@ -56,18 +58,6 @@ static inline void printWarning(const char* fmt, ...) {
 }
 
 // --------- App state ----------
-struct Status {
-  float pv_w;
-  float batt_soc;
-  float batt_v;
-  float load_w;
-  bool  grid_ok;
-  const char* state;
-  uint32_t ts_ms;
-};
-
-Status g;
-
 // ---- Reset reason (persisted from setup) ----
 static esp_reset_reason_t g_reset_reason = ESP_RST_UNKNOWN;
 static const char* g_reset_reason_str = "UNKNOWN";
@@ -93,33 +83,20 @@ bool demoMode = true;
 int outputLimitW = 2000; // example “control” value (mock)
 float outputDutyCycle = 0.0f; // 0.0 - 1.0 (represented as percent in UI)
 
-// --------- Mock status generation ----------
-void updateMock() {
-  static float t = 0;
-  t += 0.12f;
-
-  // Demo data
-  g.pv_w = 1200 + 350 * sin(t);
-  g.batt_soc = 60 + 12 * sin(t * 0.25f);
-  g.batt_v = 52.1 + 0.45 * sin(t * 0.7f);
-  g.load_w = 700 + 180 * sin(t * 0.5f);
-
-  g.grid_ok = true;
-  g.state = demoMode ? "Demo" : "Running";
-  g.ts_ms = millis();
-}
-
 // --------- JSON helpers ----------
 String makeStatusJson() {
   JsonDocument doc;
   doc["type"] = "status";
-  doc["pv_w"] = (int)round(g.pv_w);
-  doc["batt_soc"] = g.batt_soc;
-  doc["batt_v"] = g.batt_v;
-  doc["load_w"] = (int)round(g.load_w);
-  doc["grid_ok"] = g.grid_ok;
-  doc["state"] = g.state;
-  doc["ts_ms"] = g.ts_ms;
+  InverterState s = {};
+  inverter_get_status(&s);
+  // Map InverterState to UI schema
+  doc["pv_w"] = s.pv_charging_power;                  // PV charging power [W]
+  doc["batt_soc"] = s.batt_soc;                        // [%]
+  doc["batt_v"] = s.batt_voltage;                      // [V]
+  doc["load_w"] = s.ac_active_w;                        // [W]
+  doc["grid_ok"] = (s.grid_voltage > 10.0f);            // heuristic presence of grid
+  doc["state"] = demoMode ? "Demo" : "Running";
+  doc["ts_ms"] = s.ts_ms;
 
   // Include some “control state” so UI can reflect it
   doc["demo"] = demoMode;
@@ -133,29 +110,6 @@ String makeStatusJson() {
   String out;
   serializeJson(doc, out);
   return out;
-}
-
-// Safer, no-String variant to reduce heap fragmentation on long runs
-// Returns number of bytes written (excluding null-terminator); 0 on failure
-size_t makeStatusJsonTo(char* buf, size_t cap) {
-  // Reserve a static doc to avoid heap churn. Size estimate ~300B; use headroom.
-  // Suppress deprecation warning for StaticJsonDocument only here (if used)
-  // Increased capacity to accommodate longer reset_reason_str descriptions
-  JsonDocument doc;
-  doc["type"] = "status";
-  doc["pv_w"] = (int)round(g.pv_w);
-  doc["batt_soc"] = g.batt_soc;
-  doc["batt_v"] = g.batt_v;
-  doc["load_w"] = (int)round(g.load_w);
-  doc["grid_ok"] = g.grid_ok;
-  doc["state"] = g.state;
-  doc["ts_ms"] = g.ts_ms;
-  doc["demo"] = demoMode;
-  doc["output_limit_w"] = outputLimitW;
-  doc["output_duty_cycle"] = outputDutyCycle;
-  doc["reset_reason"] = (int)g_reset_reason;
-  doc["reset_reason_str"] = g_reset_reason_str;
-  return serializeJson(doc, buf, cap);
 }
 
 String makeAckJson(const char* msg) {
@@ -243,9 +197,6 @@ void handleCmdHttp() {
 }
 
 // --------- Embedded web UI helpers (LittleFS) ----------
-#include "esp_webserver.h"
-#include "inverter_comm.h"
-#include "display.h"
 
 void connectToWiFi() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -364,10 +315,10 @@ static void task_scan_touch() {
 }
 
 static void task_update_soc() {
-  // Mock data + LCD SOC update (every ~250 ms)
-  updateMock();
-  // Update LCD first line with current battery SOC from mock data
-  display_update_batt_soc(g.batt_soc);
+  // LCD SOC update (every ~250 ms) based on inverter state (mocked when demoMode)
+  InverterState s = {};
+  inverter_get_status(&s);
+  display_update_batt_soc(s.batt_soc);
 }
 
 static void task_update_temperature() {
