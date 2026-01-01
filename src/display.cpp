@@ -37,6 +37,16 @@ void display_update_batt_soc(float soc) {
   lcd_printf_line(0, "Batt SOC: %5.1f%%", soc);
 }
 
+void display_update_temperature(float temp_c) {
+  if (isnan(temp_c)) {
+    // Show placeholder when reading is invalid
+    lcd_printf_line(1, "Temp:   --.-C");
+  } else {
+    // Example: "Temp:   23.4C"
+    lcd_printf_line(1, "Temp: %6.1fC", temp_c);
+  }
+}
+
 void display_update_button0(uint16_t value) {
   // Example: "Button0:  1234"
   lcd_printf_line(1, "Button0: %5u", (unsigned)value);

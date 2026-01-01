@@ -139,3 +139,11 @@ lib_deps =
 - Push-based updates only
 - Keep protocol backward compatible
 - Prefer simplicity over abstraction
+
+---
+
+## Language & Coding Style
+- Use English for all source code comments, identifiers, log messages, commit messages, and documentation within the codebase.
+- UI-facing strings are in Czech.
+- Prefer clear, concise, and actionable comments. Keep line wrapping and style consistent with the existing files.
+- Don't put comments to original place from where code was moved.

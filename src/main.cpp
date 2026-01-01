@@ -6,12 +6,14 @@
 #include <cmath>
 #include "credentials.h"
 #include "config.h"
+#include "thermistor.h"
 #include <esp_system.h>
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <stdarg.h>
 #include <LittleFS.h>
+#include <driver/adc.h>
 
 IPAddress apIP(192, 168, 4, 1);
 IPAddress netMsk(255, 255, 255, 0);
@@ -137,7 +139,7 @@ String makeStatusJson() {
 // Returns number of bytes written (excluding null-terminator); 0 on failure
 size_t makeStatusJsonTo(char* buf, size_t cap) {
   // Reserve a static doc to avoid heap churn. Size estimate ~300B; use headroom.
-  // Potlačení deprecation warningu pro StaticJsonDocument pouze zde
+  // Suppress deprecation warning for StaticJsonDocument only here (if used)
   // Increased capacity to accommodate longer reset_reason_str descriptions
   JsonDocument doc;
   doc["type"] = "status";
@@ -311,6 +313,18 @@ void setup() {
   digitalWrite(LCD_BACKLIGHT_PIN, LOW); // start with backlight OFF
   Serial.println("HTTP :80");
 
+  // Configure ADC for thermistor on GPIO34
+  analogReadResolution(12); // 12-bit (0..4095), default on ESP32 but explicit
+  analogSetPinAttenuation(THERMISTOR_PIN, ADC_11db); // ~0..3.3V range
+
+  // Optional: quick probe log
+  float tC = read_thermistor_temp_c(THERMISTOR_PIN);
+  if (!isnan(tC)) {
+    Serial.printf("Thermistor initial T = %.2f °C\n", tC);
+  } else {
+    Serial.printf("Thermistor initial read invalid (check wiring/divider).\n");
+  }
+
   // Initialize inverter RS232 communication (background task)
  inverter_comm_init();
   // Initialize QC1602A display (4-bit wiring)
@@ -319,7 +333,7 @@ void setup() {
 
 uint32_t lastMock = 0;
 uint32_t lastPush = 0;
-static uint32_t lastButton0Sample = 0;
+static uint32_t lastTempSample = 0;
 // --- Backlight control state ---
 static uint32_t lastTouchScanMs = 0;
 static bool btn0Pressed = false;           // debounced/latched state
@@ -343,11 +357,11 @@ void loop() {
     display_update_batt_soc(g.batt_soc);
   }
 
-  // Read capacitive touch Button0 (Touch0) once per second and show on LCD line 2
-  if (millis() - lastButton0Sample >= 1000) {
-    lastButton0Sample = millis();
-    uint16_t btn0 = touchRead(BUTTON0_TOUCH);
-    display_update_button0(btn0);
+  // Read thermistor once per second and show temperature on LCD line 2
+  if (millis() - lastTempSample >= 1000) {
+    lastTempSample = millis();
+    float tC = read_thermistor_temp_c(THERMISTOR_PIN);
+    display_update_temperature(tC);
   }
 
   // Fast scan Button0 to toggle LCD backlight for 5 seconds on press
