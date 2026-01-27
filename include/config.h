@@ -42,4 +42,4 @@
 // Wiring per: https://www.smartlab.at/a-diy-guide-measuring-water-temperature-with-an-ntc-10k-thermistor-and-esp32/
 // Use GPIO34 (ADC1_CH6) as analog input. Divider: 3.3V --- R_SERIES(10k) ---[ADC pin]--- NTC(10k) --- GND
 // Note: GPIO34 is input-only on ESP32, suitable for ADC.
-#define THERMISTOR_PIN 34
+#define THERMISTOR_L_PIN 34

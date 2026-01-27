@@ -151,10 +151,10 @@ void setup() {
 
   // Configure ADC for thermistor on GPIO34
   analogReadResolution(12); // 12-bit (0..4095), default on ESP32 but explicit
-  analogSetPinAttenuation(THERMISTOR_PIN, ADC_11db); // ~0..3.3V range
+  analogSetPinAttenuation(THERMISTOR_L_PIN, ADC_11db); // ~0..3.3V range
 
   // Optional: quick probe log
-  float tC = read_thermistor_temp_c(THERMISTOR_PIN);
+  float tC = read_thermistor_temp_c(THERMISTOR_L_PIN);
   if (!isnan(tC)) {
     Serial.printf("Thermistor initial T = %.2f °C\n", tC);
   } else {
@@ -212,7 +212,7 @@ static void refresh_inverter_status() {
 
 static void task_update_temperature() {
   // Read thermistor once per second and show temperature on LCD line 2
-  float tC = read_thermistor_temp_c(THERMISTOR_PIN);
+  float tC = read_thermistor_temp_c(THERMISTOR_L_PIN);
   display_update_temperature(tC);
 }
 
