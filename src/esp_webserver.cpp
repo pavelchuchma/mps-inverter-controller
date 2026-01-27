@@ -70,11 +70,12 @@ static String makeStatusJson() {
   InverterState s = {};
   inverter_get_status(&s);
   // Map InverterState to UI schema
+  doc["valid"] = g_inverter_data_valid;
   doc["pv_w"] = s.pv_charging_power;                  // PV charging power [W]
   doc["batt_soc"] = s.batt_soc;                        // [%]
   doc["batt_v"] = s.batt_voltage;                      // [V]
   doc["load_w"] = s.ac_active_w;                        // [W]
-  doc["grid_ok"] = (s.grid_voltage > 10.0f);            // heuristic presence of grid
+  doc["grid_ok"] = g_inverter_data_valid ? (s.grid_voltage > 10.0f) : false; // if not valid, show grid unknown/false
   doc["state"] = demoMode ? "Demo" : "Running";
   doc["ts_ms"] = s.ts_ms;
 

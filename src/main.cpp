@@ -16,6 +16,7 @@
 #include <stdarg.h>
 #include <LittleFS.h>
 #include <driver/adc.h>
+#include <math.h>
 
 IPAddress apIP(192, 168, 4, 1);
 IPAddress netMsk(255, 255, 255, 0);
@@ -198,11 +199,15 @@ static void task_scan_touch() {
   }
 }
 
-static void task_update_soc() {
-  // LCD SOC update (every ~250 ms) based on inverter state (mocked when demoMode)
+static void refresh_inverter_status() {
   InverterState s = {};
   inverter_get_status(&s);
-  display_update_batt_soc(s.batt_soc);
+  // Show dashes when data are not valid
+  if (!g_inverter_data_valid) {
+    display_update_batt_soc(NAN);
+  } else {
+    display_update_batt_soc(s.batt_soc);
+  }
 }
 
 static void task_update_temperature() {
@@ -221,7 +226,7 @@ static void task_diag_heap() {
 // Task table and their periods
 static Task tasks[] = {
   {  50u,      0u, &task_scan_touch },
-  { 250u,      0u, &task_update_soc },
+  { 250u,      0u, &refresh_inverter_status },
   { 1000u,     0u, &task_update_temperature },
   { 600000u,   0u, &task_diag_heap }
 };

@@ -33,8 +33,13 @@ void display_init() {
 }
 
 void display_update_batt_soc(float soc) {
-  // Example: "Batt SOC: 62.3%"
-  lcd_printf_line(0, "Batt SOC: %5.1f%%", soc);
+  if (isnan(soc)) {
+    // No valid data
+    lcd_printf_line(0, "Batt SOC:   --.-%%");
+  } else {
+    // Example: "Batt SOC: 62.3%"
+    lcd_printf_line(0, "Batt SOC: %5.1f%%", soc);
+  }
 }
 
 void display_update_temperature(float temp_c) {

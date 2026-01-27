@@ -79,13 +79,14 @@ async function fetchStatus(){
     setConn(true, "HTTP OK");
 
     if(j.type === "status"){
-      $("pv").textContent = Math.round(j.pv_w);
-      $("soc").textContent = Number(j.batt_soc).toFixed(1);
-      $("bv").textContent = Number(j.batt_v).toFixed(2);
-      $("load").textContent = Math.round(j.load_w);
-      $("grid").textContent = j.grid_ok ? "OK" : "FAIL";
+      const valid = !!j.valid;
+      $("pv").textContent = valid ? Math.round(j.pv_w) : "—";
+      $("soc").textContent = valid ? Number(j.batt_soc).toFixed(1) : "—";
+      $("bv").textContent = valid ? Number(j.batt_v).toFixed(2) : "—";
+      $("load").textContent = valid ? Math.round(j.load_w) : "—";
+      $("grid").textContent = valid ? (j.grid_ok ? "OK" : "FAIL") : "—";
       $("state").textContent = j.state || "—";
-      $("ts").textContent = formatMsToHMS(j.ts_ms);
+      $("ts").textContent = valid ? formatMsToHMS(j.ts_ms) : "—";
 
       if (!resetReasonLogged && (j.reset_reason !== undefined || j.reset_reason_str !== undefined)){
         const rr = (j.reset_reason_str || "").toString();

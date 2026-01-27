@@ -35,6 +35,8 @@ struct InverterState {
 
 // Global variables (updated by background task)
 extern InverterState g_inverter_status;
+// Global validity flag for inverter data (demo mode always true)
+extern bool g_inverter_data_valid;
 extern char g_inverter_mode_code; // single-letter mode code from QMOD
 extern char g_inverter_mode_name[32];
 

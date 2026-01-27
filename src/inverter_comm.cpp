@@ -7,6 +7,7 @@ extern bool demoMode;
 static SemaphoreHandle_t g_inv_mutex = NULL;
 
 InverterState g_inverter_status = { 0 };
+bool g_inverter_data_valid = false;
 char g_inverter_mode_code = '\0';
 char g_inverter_mode_name[32] = "Unknown";
 
@@ -173,7 +174,7 @@ static void parse_qmod_payload(const String& p) {
 
 // Parse QPIGS payload tokens and update g_inverter_status
 static void parse_qpigs_payload(const String& p) {
-  // tokens separated by spaces
+  // Tokens separated by a single space
   const int MAX_TOK = 64;
   String toks[MAX_TOK];
   int tcount = 0;
@@ -187,36 +188,42 @@ static void parse_qpigs_payload(const String& p) {
     }
   }
 
+  // Expect a complete set of items (indexes 0..20 => 21 tokens)
+  const int EXPECTED_TOKENS = 21;
+  bool valid_data = (tcount >= EXPECTED_TOKENS);
+
   InverterState s = { 0 };
-  s.ts_ms = millis();
+  if (valid_data) {
+    // Full set received -> fill values and mark data as valid
+    s.ts_ms = millis();
 
-  auto tokf = [&](int idx)->String { return (idx < tcount) ? toks[idx] : String(""); };
-
-  // Parse according to doc order (best-effort, many devices use similar ordering)
-  if (tcount > 0) s.grid_voltage = tokf(0).toFloat();
-  if (tcount > 1) s.grid_frequency = tokf(1).toFloat();
-  if (tcount > 2) s.ac_out_voltage = tokf(2).toFloat();
-  if (tcount > 3) s.ac_out_frequency = tokf(3).toFloat();
-  if (tcount > 4) s.ac_apparent_va = tokf(4).toInt();
-  if (tcount > 5) s.ac_active_w = tokf(5).toInt();
-  if (tcount > 6) s.load_percent = tokf(6).toInt();
-  if (tcount > 7) s.bus_voltage = tokf(7).toFloat();
-  if (tcount > 8) s.batt_voltage = tokf(8).toFloat();
-  if (tcount > 9) s.batt_charge_current = tokf(9).toFloat();
-  if (tcount > 10) s.batt_soc = tokf(10).toInt();
-  if (tcount > 11) s.heatsink_temp = tokf(11).toFloat();
-  if (tcount > 12) s.pv_input_current = tokf(12).toFloat();
-  if (tcount > 13) s.pv_input_voltage = tokf(13).toFloat();
-  if (tcount > 14) s.batt_voltage_from_scc = tokf(14).toFloat();
-  if (tcount > 15) s.batt_discharge_current = tokf(15).toFloat();
-  if (tcount > 16) s.device_status_bits = (uint8_t)(tokf(16).toInt() & 0xFF);
-  if (tcount > 17) s.batt_fan_offset_10mv = tokf(17).toInt();
-  if (tcount > 18) s.eeprom_version = tokf(18).toInt();
-  if (tcount > 19) s.pv_charging_power = tokf(19).toInt();
-  if (tcount > 20) s.additional_status_bits = (uint8_t)(tokf(20).toInt() & 0xFF);
+    s.grid_voltage = toks[0].toFloat();
+    s.grid_frequency = toks[1].toFloat();
+    s.ac_out_voltage = toks[2].toFloat();
+    s.ac_out_frequency = toks[3].toFloat();
+    s.ac_apparent_va = toks[4].toInt();
+    s.ac_active_w = toks[5].toInt();
+    s.load_percent = toks[6].toInt();
+    s.bus_voltage = toks[7].toFloat();
+    s.batt_voltage = toks[8].toFloat();
+    s.batt_charge_current = toks[9].toFloat();
+    s.batt_soc = toks[10].toInt();
+    s.heatsink_temp = toks[11].toFloat();
+    s.pv_input_current = toks[12].toFloat();
+    s.pv_input_voltage = toks[13].toFloat();
+    s.batt_voltage_from_scc = toks[14].toFloat();
+    s.batt_discharge_current = toks[15].toFloat();
+    s.device_status_bits = (uint8_t)(toks[16].toInt() & 0xFF);
+    s.batt_fan_offset_10mv = toks[17].toInt();
+    s.eeprom_version = toks[18].toInt();
+    s.pv_charging_power = toks[19].toInt();
+    s.additional_status_bits = (uint8_t)(toks[20].toInt() & 0xFF);
+  }
 
   if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
   g_inverter_status = s;
+  // If we parsed a full set, consider data valid; otherwise remains as previously set
+  g_inverter_data_valid = valid_data;
   if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
 }
 
@@ -225,24 +232,30 @@ static void print_status_and_mode_snapshot() {
   InverterState s;
   char mode_code = '\0';
   char mode_name[32] = { 0 };
+  bool valid;
 
   if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
   s = g_inverter_status;
   mode_code = g_inverter_mode_code;
   strncpy(mode_name, g_inverter_mode_name, sizeof(mode_name) - 1);
+  valid = g_inverter_data_valid;
   if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
 
   Serial.println("--- Inverter Status Snapshot ---");
-  Serial.printf("Mode: %c (%s)\n", mode_code ? mode_code : '?', mode_name);
-  Serial.printf("Grid V: %.2f V, Grid F: %.2f Hz\n", s.grid_voltage, s.grid_frequency);
-  Serial.printf("AC Out V: %.2f V, AC Out F: %.2f Hz\n", s.ac_out_voltage, s.ac_out_frequency);
-  Serial.printf("Apparent VA: %d VA, Active W: %d W, Load %%: %d\n", s.ac_apparent_va, s.ac_active_w, s.load_percent);
-  Serial.printf("BUS V: %.2f V, Batt V: %.2f V, Batt Charge I: %.2f A, Batt SOC: %d %%\n", s.bus_voltage, s.batt_voltage, s.batt_charge_current, s.batt_soc);
-  Serial.printf("Heatsink: %.2f C, PV I: %.2f A, PV V: %.2f V\n", s.heatsink_temp, s.pv_input_current, s.pv_input_voltage);
-  Serial.printf("Batt V from SCC: %.2f V, Batt Disch I: %.2f A\n", s.batt_voltage_from_scc, s.batt_discharge_current);
-  Serial.printf("Device status bits: 0x%02X, Additional status bits: 0x%02X\n", s.device_status_bits, s.additional_status_bits);
-  Serial.printf("Batt fan offset: %d (10mV), EEPROM ver: %d, PV charging power: %d W\n", s.batt_fan_offset_10mv, s.eeprom_version, s.pv_charging_power);
-  Serial.printf("Timestamp: %u ms\n", (unsigned)s.ts_ms);
+  if (!valid) {
+    Serial.println("Read failed, no data available");
+  } else {
+    Serial.printf("Mode: %c (%s)\n", mode_code ? mode_code : '?', mode_name);
+    Serial.printf("Grid V: %.2f V, Grid F: %.2f Hz\n", s.grid_voltage, s.grid_frequency);
+    Serial.printf("AC Out V: %.2f V, AC Out F: %.2f Hz\n", s.ac_out_voltage, s.ac_out_frequency);
+    Serial.printf("Apparent VA: %d VA, Active W: %d W, Load %%: %d\n", s.ac_apparent_va, s.ac_active_w, s.load_percent);
+    Serial.printf("BUS V: %.2f V, Batt V: %.2f V, Batt Charge I: %.2f A, Batt SOC: %d %%\n", s.bus_voltage, s.batt_voltage, s.batt_charge_current, s.batt_soc);
+    Serial.printf("Heatsink: %.2f C, PV I: %.2f A, PV V: %.2f V\n", s.heatsink_temp, s.pv_input_current, s.pv_input_voltage);
+    Serial.printf("Batt V from SCC: %.2f V, Batt Disch I: %.2f A\n", s.batt_voltage_from_scc, s.batt_discharge_current);
+    Serial.printf("Device status bits: 0x%02X, Additional status bits: 0x%02X\n", s.device_status_bits, s.additional_status_bits);
+    Serial.printf("Batt fan offset: %d (10mV), EEPROM ver: %d, PV charging power: %d W\n", s.batt_fan_offset_10mv, s.eeprom_version, s.pv_charging_power);
+    Serial.printf("Timestamp: %u ms\n", (unsigned)s.ts_ms);
+  }
   Serial.println("---------------------------------");
 }
 
@@ -270,6 +283,7 @@ static void inverter_mock_tick() {
 
   if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
   g_inverter_status = s;
+  g_inverter_data_valid = true; // In demo mode we always claim data are valid
   if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
 }
 
@@ -283,14 +297,26 @@ static void inverter_task(void* arg) {
       // Real mode: query inverter
       // QMOD
       String payload;
+      bool failed = false;
       if (send_command_and_get_payload("QMOD", payload)) {
         parse_qmod_payload(payload);
+      } else {
+        failed = true;
       }
 
       // QPIGS
       payload = String();
       if (send_command_and_get_payload("QPIGS", payload)) {
         parse_qpigs_payload(payload);
+      } else {
+        failed = true;
+      }
+      
+      if (failed) {
+        // On any failure, mark data as invalid
+        if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
+        g_inverter_data_valid = false;
+        if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
       }
 
       // Print snapshot after each poll cycle
