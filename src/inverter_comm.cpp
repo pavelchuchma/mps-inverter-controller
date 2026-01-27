@@ -8,6 +8,8 @@ static SemaphoreHandle_t g_inv_mutex = NULL;
 
 InverterState g_inverter_status = { 0 };
 bool g_inverter_data_valid = false;
+float g_temp_h = NAN;
+float g_temp_l = NAN;
 char g_inverter_mode_code = '\0';
 char g_inverter_mode_name[32] = "Unknown";
 

@@ -37,6 +37,8 @@ struct InverterState {
 extern InverterState g_inverter_status;
 // Global validity flag for inverter data (demo mode always true)
 extern bool g_inverter_data_valid;
+extern float g_temp_h;
+extern float g_temp_l;
 extern char g_inverter_mode_code; // single-letter mode code from QMOD
 extern char g_inverter_mode_name[32];
 

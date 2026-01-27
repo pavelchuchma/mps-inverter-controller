@@ -42,14 +42,26 @@ void display_update_batt_soc(float soc) {
   }
 }
 
-void display_update_temperature(float temp_c) {
-  if (isnan(temp_c)) {
-    // Show placeholder when reading is invalid
-    lcd_printf_line(1, "Temp:   --.-C");
+static void format_temp_to_str(float temp, char* buf) {
+  if (isnan(temp)) {
+    strcpy(buf, "--.-");
+  } else if (temp < 0) {
+    // Format negative values as integers to save space
+    dtostrf(temp, 4, 0, buf);
   } else {
-    // Example: "Temp:   23.4C"
-    lcd_printf_line(1, "Temp: %6.1fC", temp_c);
+    dtostrf(temp, 4, 1, buf);
   }
+}
+
+void display_update_temperature(float temp_h, float temp_l) {
+  char h_str[6];
+  char l_str[6];
+
+  format_temp_to_str(temp_h, h_str);
+  format_temp_to_str(temp_l, l_str);
+
+  // Target: "Temp: HH.H/LL.LC"
+  lcd_printf_line(1, "Temp: %s/%sC", h_str, l_str);
 }
 
 void display_update_button0(uint16_t value) {

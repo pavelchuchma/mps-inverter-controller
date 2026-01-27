@@ -78,6 +78,8 @@ static String makeStatusJson() {
   doc["grid_ok"] = g_inverter_data_valid ? (s.grid_voltage > 10.0f) : false; // if not valid, show grid unknown/false
   doc["state"] = demoMode ? "Demo" : "Running";
   doc["ts_ms"] = s.ts_ms;
+  doc["temp_h"] = isnan(g_temp_h) ? JsonVariant() : g_temp_h;
+  doc["temp_l"] = isnan(g_temp_l) ? JsonVariant() : g_temp_l;
 
   // Include some “control state” so UI can reflect it
   doc["demo"] = demoMode;

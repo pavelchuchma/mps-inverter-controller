@@ -43,3 +43,4 @@
 // Use GPIO34 (ADC1_CH6) as analog input. Divider: 3.3V --- R_SERIES(10k) ---[ADC pin]--- NTC(10k) --- GND
 // Note: GPIO34 is input-only on ESP32, suitable for ADC.
 #define THERMISTOR_L_PIN 34
+#define THERMISTOR_H_PIN 35

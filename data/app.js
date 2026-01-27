@@ -84,6 +84,8 @@ async function fetchStatus(){
       $("soc").textContent = valid ? Number(j.batt_soc).toFixed(1) : "—";
       $("bv").textContent = valid ? Number(j.batt_v).toFixed(2) : "—";
       $("load").textContent = valid ? Math.round(j.load_w) : "—";
+      $("tempH").textContent = (j.temp_h !== undefined && j.temp_h !== null) ? Number(j.temp_h).toFixed(1) : "—";
+      $("tempL").textContent = (j.temp_l !== undefined && j.temp_l !== null) ? Number(j.temp_l).toFixed(1) : "—";
       $("grid").textContent = valid ? (j.grid_ok ? "OK" : "FAIL") : "—";
       $("state").textContent = j.state || "—";
       $("ts").textContent = valid ? formatMsToHMS(j.ts_ms) : "—";

@@ -149,16 +149,23 @@ void setup() {
   digitalWrite(LCD_BACKLIGHT_PIN, LOW); // start with backlight OFF
   Serial.println("HTTP :80");
 
-  // Configure ADC for thermistor on GPIO34
+  // Configure ADC for thermistors on GPIO34 and GPIO35
   analogReadResolution(12); // 12-bit (0..4095), default on ESP32 but explicit
   analogSetPinAttenuation(THERMISTOR_L_PIN, ADC_11db); // ~0..3.3V range
+  analogSetPinAttenuation(THERMISTOR_H_PIN, ADC_11db); // ~0..3.3V range
 
   // Optional: quick probe log
-  float tC = read_thermistor_temp_c(THERMISTOR_L_PIN);
-  if (!isnan(tC)) {
-    Serial.printf("Thermistor initial T = %.2f °C\n", tC);
+  float tL = read_thermistor_temp_c(THERMISTOR_L_PIN);
+  float tH = read_thermistor_temp_c(THERMISTOR_H_PIN);
+  if (!isnan(tL)) {
+    Serial.printf("Thermistor L initial T = %.2f °C\n", tL);
   } else {
-    Serial.printf("Thermistor initial read invalid (check wiring/divider).\n");
+    Serial.printf("Thermistor L initial read invalid (check wiring/divider).\n");
+  }
+  if (!isnan(tH)) {
+    Serial.printf("Thermistor H initial T = %.2f °C\n", tH);
+  } else {
+    Serial.printf("Thermistor H initial read invalid (check wiring/divider).\n");
   }
 
   // Initialize inverter RS232 communication (background task)
@@ -211,9 +218,10 @@ static void refresh_inverter_status() {
 }
 
 static void task_update_temperature() {
-  // Read thermistor once per second and show temperature on LCD line 2
-  float tC = read_thermistor_temp_c(THERMISTOR_L_PIN);
-  display_update_temperature(tC);
+  // Read thermistors once per second and show temperature on LCD line 2
+  g_temp_l = read_thermistor_temp_c(THERMISTOR_L_PIN);
+  g_temp_h = read_thermistor_temp_c(THERMISTOR_H_PIN);
+  display_update_temperature(g_temp_h, g_temp_l);
 }
 
 static void task_diag_heap() {
