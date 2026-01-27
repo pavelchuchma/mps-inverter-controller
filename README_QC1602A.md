@@ -37,23 +37,43 @@ Notes:
 - Backlight: for pins 15/16, check whether the module already includes a series resistor. If not, add e.g. 100–220 Ω in series with LED+ (pin 15).
 
 ### Quick functionality check
-After flashing the firmware, `display_init()` initializes the LCD to 16×2 and prints “Starting...” on the first line. Then the app calls `display_update_batt_soc(soc)`, which overwrites the first line with text in the form “Batt SOC: 62.3%”.
+After flashing the firmware, `display_init()` initializes the LCD to 16×2 and prints “Starting...” on the first line. 
+- The app calls `display_update_batt_soc(soc)`, which overwrites the first line with text in the form “Batt SOC: 62.3%”.
+- The app calls `display_update_temperature(h, l)` every second, updating the second line with “Temp: 45.2/24.1C”.
 
 ### Step‑by‑step wiring
-1. Connect GND (common ground) between the ESP32 and the LCD module.
+1. Connect GND (common ground) between the ESP32, the LCD module, and the thermistors.
 2. Connect LCD VDD to +5 V.
 3. Wire a 10 kΩ trimmer for contrast to VO (pin 3).
-4. Connect the signal pins per the map: RS=GPIO21, E=GPIO22, D4=GPIO19, D5=GPIO18, D6=GPIO5, D7=GPIO23.
-5. Tie R/W permanently to GND.
-6. Wire the backlight (pins 15–16) depending on whether the module has a built‑in resistor.
-7. Optionally insert a level shifter between the ESP32 (3.3 V) and the LCD inputs (if the LCD is powered at 5 V).
-8. Flash the firmware with PlatformIO. You can watch logs on the serial line (921600 baud).
+4. Connect the LCD signal pins: RS=GPIO21, E=GPIO22, D4=GPIO19, D5=GPIO18, D6=GPIO5, D7=GPIO23.
+5. Tie LCD R/W permanently to GND.
+6. Wire the backlight (pins 15–16).
+7. Connect thermistor voltage dividers:
+   - 3.3 V to 10 kΩ resistor, other end to GPIO 34 AND to one leg of NTC.
+   - Other leg of NTC to GND.
+   - Repeat for GPIO 35.
+8. Optionally insert a level shifter for LCD inputs.
+9. Flash the firmware with PlatformIO. Watch logs on the serial line (921600 baud).
 
 ### Where to change wiring in code
 If you change GPIO pins, modify only `include/config.h` in the “LCD QC1602A (4-bit parallel mode)” section. There is no need to touch `display.cpp`.
 
-### File references
-- `include/config.h` — central pin definitions
-- `src/display.h` — display API (`display_init`, `display_update_batt_soc`)
-- `src/display.cpp` — implementation and `LiquidCrystal` initialization
-- `platformio.ini` — `LiquidCrystal` library dependency
+### NTC Thermistors (Temperature Sensors)
+The project supports two NTC thermistors (10k Ω, B3950) to monitor temperatures. These values are displayed on the second line of the LCD.
+
+#### Pin Map (ESP32 Feather ↔ Thermistors)
+- **GPIO 34 (ADC1_CH6)**: Sensor "L" (typically lower temperature/ambient)
+- **GPIO 35 (ADC1_CH7)**: Sensor "H" (typically higher temperature/inverter)
+
+#### Wiring (Voltage Divider)
+Each thermistor must be connected using a voltage divider to the 3.3 V rail:
+```
+3.3 V --- [ 10k Ω Resistor ] ---+--- [ NTC 10k Ω ] --- GND
+                                |
+                             ADC Pin (34 or 35)
+```
+*Note: Use high-precision resistors (1%) for better accuracy. GPIO 34 and 35 are input-only pins on the ESP32, which is ideal for ADC.*
+
+#### Configuration
+Calibration constants (Beta, T0, R0) are defined in `src/thermistor.cpp`. Pin assignments are in `include/config.h`.
+
