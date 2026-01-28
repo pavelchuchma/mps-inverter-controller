@@ -79,11 +79,9 @@ async function fetchStatus() {
 
     if (j.type === "status") {
       const valid = !!j.valid;
-      $("soc").textContent = valid ? Number(j.batt_soc).toFixed(1) : "—";
 
       $("tempH").textContent = (j.temp_h !== undefined && j.temp_h !== null) ? Number(j.temp_h).toFixed(1) : "—";
       $("tempL").textContent = (j.temp_l !== undefined && j.temp_l !== null) ? Number(j.temp_l).toFixed(1) : "—";
-      $("ts").textContent = valid ? formatMsToHMS(j.ts_ms) : "—";
       $("ac_out_voltage").textContent = valid && j.ac_out_voltage !== undefined && j.ac_out_voltage !== null ? Number(j.ac_out_voltage).toFixed(1) : "—";
       $("ac_out_frequency").textContent = valid && j.ac_out_frequency !== undefined && j.ac_out_frequency !== null ? Number(j.ac_out_frequency).toFixed(2) : "—";
       $("ac_apparent_va").textContent = valid && j.ac_apparent_va !== undefined && j.ac_apparent_va !== null ? String(Math.round(j.ac_apparent_va)) : "—";
