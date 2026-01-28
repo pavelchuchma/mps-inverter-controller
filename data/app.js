@@ -111,6 +111,23 @@ async function fetchStatus(){
       }
       updateModified();
       updateModifiedDuty();
+        // Populate new fields as regular UI cards
+        $("ac_out_voltage").textContent = valid && j.ac_out_voltage !== undefined && j.ac_out_voltage !== null ? Number(j.ac_out_voltage).toFixed(1) : "—";
+        $("ac_out_frequency").textContent = valid && j.ac_out_frequency !== undefined && j.ac_out_frequency !== null ? Number(j.ac_out_frequency).toFixed(2) : "—";
+        $("ac_apparent_va").textContent = valid && j.ac_apparent_va !== undefined && j.ac_apparent_va !== null ? String(Math.round(j.ac_apparent_va)) : "—";
+        $("ac_active_w").textContent = valid && j.ac_active_w !== undefined && j.ac_active_w !== null ? String(Math.round(j.ac_active_w)) : "—";
+        $("load_percent").textContent = valid && j.load_percent !== undefined && j.load_percent !== null ? String(Math.round(j.load_percent)) : "—";
+        $("batt_voltage").textContent = valid && j.batt_voltage !== undefined && j.batt_voltage !== null ? Number(j.batt_voltage).toFixed(2) : "—";
+        $("batt_charge_current").textContent = valid && j.batt_charge_current !== undefined && j.batt_charge_current !== null ? Number(j.batt_charge_current).toFixed(2) : "—";
+        $("batt_soc").textContent = valid && j.batt_soc !== undefined && j.batt_soc !== null ? Number(j.batt_soc).toFixed(1) : "—";
+        $("heatsink_temp").textContent = valid && j.heatsink_temp !== undefined && j.heatsink_temp !== null ? Number(j.heatsink_temp).toFixed(1) : "—";
+        $("pv_input_current").textContent = valid && j.pv_input_current !== undefined && j.pv_input_current !== null ? Number(j.pv_input_current).toFixed(2) : "—";
+        $("pv_input_voltage").textContent = valid && j.pv_input_voltage !== undefined && j.pv_input_voltage !== null ? Number(j.pv_input_voltage).toFixed(2) : "—";
+        $("batt_voltage_from_scc").textContent = valid && j.batt_voltage_from_scc !== undefined && j.batt_voltage_from_scc !== null ? Number(j.batt_voltage_from_scc).toFixed(2) : "—";
+        $("batt_discharge_current").textContent = valid && j.batt_discharge_current !== undefined && j.batt_discharge_current !== null ? Number(j.batt_discharge_current).toFixed(2) : "—";
+        $("pv_charging_power").textContent = valid && j.pv_charging_power !== undefined && j.pv_charging_power !== null ? String(Math.round(j.pv_charging_power)) : "—";
+        $("g_inverter_mode_code").textContent = j.g_inverter_mode_code !== undefined && j.g_inverter_mode_code !== null ? j.g_inverter_mode_code : "—";
+        $("g_inverter_mode_name").textContent = j.g_inverter_mode_name !== undefined && j.g_inverter_mode_name !== null ? j.g_inverter_mode_name : "—";
       return;
     }
     logln("MSG: " + JSON.stringify(j));

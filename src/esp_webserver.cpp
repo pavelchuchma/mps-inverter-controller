@@ -68,10 +68,30 @@ static String makeStatusJson() {
   doc["type"] = "status";
   InverterState s = {};
   inverter_get_status(&s);
+  // Also obtain current mode (thread-safe accessor)
+  char mode_code = '\0';
+  char mode_name[32] = "";
+  inverter_get_mode(&mode_code, mode_name, sizeof(mode_name));
+  // Insert attributes in the order requested by the UI
+  doc["ac_out_voltage"] = s.ac_out_voltage;
+  doc["ac_out_frequency"] = s.ac_out_frequency;
+  doc["ac_apparent_va"] = s.ac_apparent_va;
+  doc["ac_active_w"] = s.ac_active_w;
+  doc["load_percent"] = s.load_percent;
+  doc["batt_voltage"] = s.batt_voltage;
+  doc["batt_charge_current"] = s.batt_charge_current;
+  doc["batt_soc"] = s.batt_soc;
+  doc["heatsink_temp"] = s.heatsink_temp;
+  doc["pv_input_current"] = s.pv_input_current;
+  doc["pv_input_voltage"] = s.pv_input_voltage;
+  doc["batt_voltage_from_scc"] = s.batt_voltage_from_scc;
+  doc["batt_discharge_current"] = s.batt_discharge_current;
+  doc["pv_charging_power"] = s.pv_charging_power;
+  doc["g_inverter_mode_code"] = String(mode_code);
+  doc["g_inverter_mode_name"] = mode_name;
   // Map InverterState to UI schema
   doc["valid"] = g_inverter_data_valid;
   doc["pv_w"] = s.pv_charging_power;                  // PV charging power [W]
-  doc["batt_soc"] = s.batt_soc;                        // [%]
   doc["batt_v"] = s.batt_voltage;                      // [V]
   doc["load_w"] = s.ac_active_w;                        // [W]
   doc["grid_ok"] = g_inverter_data_valid ? (s.grid_voltage > 10.0f) : false; // if not valid, show grid unknown/false
