@@ -1,9 +1,6 @@
 #include "inverter_comm.h"
 #include <HardwareSerial.h>
 
-// demoMode is defined in main.cpp; when true we should mock data
-extern bool demoMode;
-
 static SemaphoreHandle_t g_inv_mutex = NULL;
 
 InverterState g_inverter_status = { 0 };
@@ -261,69 +258,37 @@ static void print_status_and_mode_snapshot() {
   Serial.println("---------------------------------");
 }
 
-// Demo-mode mock tick: updates only selected properties and timestamp.
-// Thread-safe: reads previous state under mutex, modifies required fields, writes back.
-static void inverter_mock_tick() {
-  InverterState s;
-  if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
-  s = g_inverter_status; // start from last state to preserve other fields
-  if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
-
-  static float t = 0.0f;
-  t += 0.12f;
-
-  // Mock required properties
-  s.grid_voltage = 230.0f + 5.0f * sinf(t * 0.7f);
-  s.load_percent = (int)(35 + 25 * (sinf(t * 0.5f) * 0.5f + 0.5f));
-  s.batt_voltage = 52.1f + 0.45f * sinf(t * 0.6f);
-  s.batt_charge_current = 8.0f + 3.0f * sinf(t * 0.9f);
-  s.batt_soc = (int)(60 + 12 * sinf(t * 0.25f));
-  s.pv_input_current = 10.0f + 4.0f * sinf(t);
-  s.pv_input_voltage = 280.0f + 15.0f * sinf(t * 0.4f);
-  s.pv_charging_power = (int)(1350 + 300 * sinf(t));
-  s.ts_ms = millis();
-
-  if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
-  g_inverter_status = s;
-  g_inverter_data_valid = true; // In demo mode we always claim data are valid
-  if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
-}
-
 // Background task that queries QMOD and QPIGS periodically
 static void inverter_task(void* arg) {
   (void)arg;
   for (;;) {
-    if (demoMode) {
-      inverter_mock_tick();
+    // Query inverter
+    // QMOD
+    String payload;
+    bool failed = false;
+    if (send_command_and_get_payload("QMOD", payload)) {
+      parse_qmod_payload(payload);
     } else {
-      // Real mode: query inverter
-      // QMOD
-      String payload;
-      bool failed = false;
-      if (send_command_and_get_payload("QMOD", payload)) {
-        parse_qmod_payload(payload);
-      } else {
-        failed = true;
-      }
-
-      // QPIGS
-      payload = String();
-      if (send_command_and_get_payload("QPIGS", payload)) {
-        parse_qpigs_payload(payload);
-      } else {
-        failed = true;
-      }
-      
-      if (failed) {
-        // On any failure, mark data as invalid
-        if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
-        g_inverter_data_valid = false;
-        if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
-      }
-
-      // Print snapshot after each poll cycle
-      print_status_and_mode_snapshot();
+      failed = true;
     }
+
+    // QPIGS
+    payload = String();
+    if (send_command_and_get_payload("QPIGS", payload)) {
+      parse_qpigs_payload(payload);
+    } else {
+      failed = true;
+    }
+    
+    if (failed) {
+      // On any failure, mark data as invalid
+      if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
+      g_inverter_data_valid = false;
+      if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
+    }
+
+    // Print snapshot after each poll cycle
+    print_status_and_mode_snapshot();
 
     vTaskDelay(pdMS_TO_TICKS(INVERTER_POLL_INTERVAL_MS));
   }

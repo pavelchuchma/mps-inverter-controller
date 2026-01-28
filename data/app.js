@@ -22,7 +22,6 @@ function formatMsToHMS(ms){
   return `${hh}:${mm}:${ss}`;
 }
 
-let demoMode = false;
 const limEl = $("lim");
 let lastServerLimit = -1;
 const dutyEl = $("duty");
@@ -98,9 +97,6 @@ async function fetchStatus(){
         resetReasonLogged = true;
       }
 
-      demoMode = !!j.demo;
-      $("demoVal").textContent = demoMode ? "true" : "false";
-
       const lim = Math.round(j.output_limit_w ?? -1);
       if (lastServerLimit !== lim) {
         lastServerLimit = lim;
@@ -130,11 +126,6 @@ async function fetchStatus(){
     clearTimeout(to);
   }
 }
-
-$("btnDemo").addEventListener("click", () => {
-  demoMode = !demoMode;
-  send({type:"cmd", name:"set_demo", value: demoMode});
-});
 
 limEl.addEventListener("input", () => {
   $("limVal").textContent = limEl.value;

@@ -59,7 +59,6 @@ void webserver_set_reset_info(int reason, const char* reason_str) {
 }
 
 // ---- Externals from main.cpp (control state reflected in JSON/commands) ----
-extern bool demoMode;
 extern int outputLimitW;
 extern float outputDutyCycle;
 
@@ -76,13 +75,13 @@ static String makeStatusJson() {
   doc["batt_v"] = s.batt_voltage;                      // [V]
   doc["load_w"] = s.ac_active_w;                        // [W]
   doc["grid_ok"] = g_inverter_data_valid ? (s.grid_voltage > 10.0f) : false; // if not valid, show grid unknown/false
-  doc["state"] = demoMode ? "Demo" : "Running";
+  doc["state"] = "Running";
   doc["ts_ms"] = s.ts_ms;
   doc["temp_h"] = isnan(g_temp_h) ? JsonVariant() : g_temp_h;
   doc["temp_l"] = isnan(g_temp_l) ? JsonVariant() : g_temp_l;
 
   // Include some “control state” so UI can reflect it
-  doc["demo"] = demoMode;
+
   doc["output_limit_w"] = outputLimitW;
   doc["output_duty_cycle"] = outputDutyCycle;
 
@@ -123,13 +122,6 @@ static String handleCommand(JsonDocument& doc) {
   if (!name) {
     Serial.println("[CMD] missing name field");
     return makeErrJson("bad_request", "Missing 'name'");
-  }
-
-  // Example command: set_demo (bool)
-  if (strcmp(name, "set_demo") == 0) {
-    if (doc["value"].isNull()) return makeErrJson("bad_request", "Missing 'value'");
-    demoMode = doc["value"].as<bool>();
-    return makeAckJson(demoMode ? "demo enabled" : "demo disabled");
   }
 
   // Example command: set_output_limit_w (int)

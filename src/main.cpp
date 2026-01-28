@@ -80,8 +80,7 @@ static const char* resetReasonToStr(esp_reset_reason_t r) {
   }
 }
 
-bool demoMode = true;
-int outputLimitW = 2000; // example “control” value (mock)
+int outputLimitW = 2000;
 float outputDutyCycle = 0.0f; // 0.0 - 1.0 (represented as percent in UI)
 
 

@@ -56,6 +56,9 @@
 			"cinttypes": "cpp",
 			"typeinfo": "cpp",
 			"modbusimpl": "cpp"
+		},
+		"chat.tools.terminal.autoApprove": {
+			"platformio": true
 		}
 	}
 }
