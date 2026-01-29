@@ -167,6 +167,7 @@ void setup() {
     Serial.printf("Thermistor H initial read invalid (check wiring/divider).\n");
   }
 
+  GPIO_FAST_OUTPUT_ENABLE(LCD_BACKLIGHT_PIN);
   // Initialize inverter RS232 communication (background task)
   inverter_comm_init();
   // Initialize QC1602A display (4-bit wiring)
@@ -181,27 +182,35 @@ struct Task {
   void (*fn)();      // function to execute
 };
 
+inline boolean isBacklightOn() {
+  return GPIO_FAST_GET_LEVEL(LCD_BACKLIGHT_PIN);
+}
+
 // --- Backlight control state ---
-static boolean backlightOn = false;
 static int16_t backlightOffCounter = 0;
+
+void displayBacklightOn() {
+  backlightOffCounter = 0;
+  GPIO_FAST_SET_1(LCD_BACKLIGHT_PIN);
+}
+
+void checkDisplayBacklightTimeout() {
+  if (isBacklightOn()) {
+    if (backlightOffCounter++ >= 100) { // ~5 seconds of no touch
+      GPIO_FAST_SET_0(LCD_BACKLIGHT_PIN);
+    }
+  }
+}
+
 static void task_scan_touch() {
   // Fast scan Button0 (called every ~50 ms from loop())
   uint16_t raw = touchRead(BUTTON0_TOUCH);
   bool nowPressed = (raw <= BUTTON0_TOUCH_THRESHOLD);
 
   if (nowPressed) {
-    if (!backlightOn) {
-      backlightOn = true;
-      backlightOffCounter = 0;
-      digitalWrite(LCD_BACKLIGHT_PIN, HIGH);
-    }
+    displayBacklightOn();
   } else {
-    if (backlightOn) {
-      if (backlightOffCounter++ == 100) { // ~5 seconds of no touch
-        backlightOn = false;
-        digitalWrite(LCD_BACKLIGHT_PIN, LOW);
-      }
-    }
+    checkDisplayBacklightTimeout();
   }
 }
 

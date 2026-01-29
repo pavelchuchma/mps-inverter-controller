@@ -60,8 +60,8 @@ void display_update_temperature(float temp_h, float temp_l) {
   format_temp_to_str(temp_h, h_str);
   format_temp_to_str(temp_l, l_str);
 
-  // Target: "Temp: HH.H/LL.LC"
-  lcd_printf_line(1, "Temp: %s/%sC", h_str, l_str);
+  // Target: "Voda: HH.H/LL.LC"
+  lcd_printf_line(1, "Voda: %s/%sC", h_str, l_str);
 }
 
 void display_update_button0(uint16_t value) {
