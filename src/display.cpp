@@ -47,7 +47,7 @@ static void format_temp_to_str(float temp, char* buf) {
     strcpy(buf, "--.-");
   } else if (temp < 0) {
     // Format negative values as integers to save space
-    dtostrf(temp, 4, 0, buf);
+    dtostrf(temp, 3, 0, buf);
   } else {
     dtostrf(temp, 4, 1, buf);
   }
