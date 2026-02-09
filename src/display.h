@@ -16,3 +16,15 @@ void display_update_temperature(float temp_h, float temp_l);
 
 // Show Button0 raw touch value.
 void display_update_button0(uint16_t value);
+
+// Print formatted text to LCD line (0 or 1), auto-cleared with spaces to 16 chars.
+void lcd_printf_line(uint8_t line, const char* fmt, ...);
+
+// Check if LCD backlight is currently on.
+inline boolean isBacklightOn();
+
+// Turn on the LCD backlight and reset the timeout counter.
+void displayBacklightOn();
+
+// Check and handle LCD backlight timeout (call periodically).
+void checkDisplayBacklightTimeout();

@@ -28,15 +28,15 @@
 // Mapped in code as Button0–Button3
 // Note: On ESP32, Touch0..3 correspond to GPIO4, GPIO0, GPIO2, GPIO15 respectively.
 // Some of these are strapping pins (0, 2, 15) — ensure your hardware accounts for this.
-#define BUTTON0_TOUCH T0  // Touch0 (GPIO4)
-#define BUTTON1_TOUCH T1  // Touch1 (GPIO0)
-#define BUTTON2_TOUCH T2  // Touch2 (GPIO2)
-#define BUTTON3_TOUCH T3  // Touch3 (GPIO15)
+
+#define BUTTON0_TOUCH 4   // Touch0 (GPIO4)
+#define BUTTON1_TOUCH 14  // Touch1 (GPIO14)
+#define BUTTON2_TOUCH 13  // Touch2 (GPIO13)
+#define BUTTON3_TOUCH 15  // Touch3 (GPIO15)
 
 // Touch threshold for detecting a "press" on Button0.
-// Raw values vary by board/environment; adjust after observing `display_update_button0` readings.
-// Backlight is activated for 5s on a falling-below-threshold edge.
-#define BUTTON0_TOUCH_THRESHOLD 35
+// Raw values vary by board/environment
+#define BUTTON_TOUCH_THRESHOLD 35
 
 // --- NTC Thermistor (temperature sensor) ---
 // Wiring per: https://www.smartlab.at/a-diy-guide-measuring-water-temperature-with-an-ntc-10k-thermistor-and-esp32/

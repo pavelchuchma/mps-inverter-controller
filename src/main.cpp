@@ -87,17 +87,21 @@ float outputDutyCycle = 0.0f; // 0.0 - 1.0 (represented as percent in UI)
 // --------- Embedded web UI helpers (LittleFS) ----------
 
 void connectToWiFi() {
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  displayBacklightOn();
+  lcd_printf_line(0, "WiFi: %s", WIFI_SSID);
 
-  uint16_t connectWait = 240;
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  uint16_t connectWaiting = 0;
   while (WiFi.status() != WL_CONNECTED) {
+    lcd_printf_line(1, "%ds...", connectWaiting / 4);
     delay(250);
     Serial.printf(".");
-    if (!connectWait--) {
+    if (connectWaiting++ > 240) { // ~60 seconds
       Serial.printf("Failed to connect, restarting!\n");
       ESP.restart();
     }
   }
+  lcd_printf_line(1, "Pripojeno");
 }
 
 void createWiFiAP() {
@@ -130,6 +134,8 @@ void setup() {
   Serial.printf("[BOOT] reset reason=%d (%s)\n", (int)g_reset_reason, g_reset_reason_str);
   // Also log reboot reason as a WARN (will append to LittleFS via printWarning)
   printWarning("[BOOT] reset reason=%d (%s)", (int)g_reset_reason, g_reset_reason_str);
+  // Initialize QC1602A display (4-bit wiring)
+  display_init();
 
   // Initialize webserver / LittleFS (web UI files in data/ will be uploaded to device)
   initWebServer();
@@ -143,9 +149,6 @@ void setup() {
   // Setup PWM output pin
   pinMode(PWM_PIN, OUTPUT);
   digitalWrite(PWM_PIN, LOW);
-  // Setup LCD backlight control pin (active HIGH)
-  pinMode(LCD_BACKLIGHT_PIN, OUTPUT);
-  digitalWrite(LCD_BACKLIGHT_PIN, LOW); // start with backlight OFF
   Serial.println("HTTP :80");
 
   // Configure ADC for thermistors on GPIO34 and GPIO35
@@ -167,11 +170,8 @@ void setup() {
     Serial.printf("Thermistor H initial read invalid (check wiring/divider).\n");
   }
 
-  GPIO_FAST_OUTPUT_ENABLE(LCD_BACKLIGHT_PIN);
   // Initialize inverter RS232 communication (background task)
   inverter_comm_init();
-  // Initialize QC1602A display (4-bit wiring)
-  display_init();
 }
 
 
@@ -182,35 +182,107 @@ struct Task {
   void (*fn)();      // function to execute
 };
 
-inline boolean isBacklightOn() {
-  return GPIO_FAST_GET_LEVEL(LCD_BACKLIGHT_PIN);
+// --- Button state tracking ---
+struct ButtonState {
+  bool pressed;
+  uint32_t pressStartMs;
+};
+
+static ButtonState buttonStates[4] = {{false, 0}, {false, 0}, {false, 0}, {false, 0}};
+
+// --- Button handlers (called on button events) ---
+void onButton0Down() {
+  lcd_printf_line(0, "Button0 DOWN");
 }
 
-// --- Backlight control state ---
-static int16_t backlightOffCounter = 0;
-
-void displayBacklightOn() {
-  backlightOffCounter = 0;
-  GPIO_FAST_SET_1(LCD_BACKLIGHT_PIN);
+void onButton0Up(int durationMs) {
+  lcd_printf_line(0, "Button0 UP %dms", durationMs);
 }
 
-void checkDisplayBacklightTimeout() {
-  if (isBacklightOn()) {
-    if (backlightOffCounter++ >= 100) { // ~5 seconds of no touch
-      GPIO_FAST_SET_0(LCD_BACKLIGHT_PIN);
+void onButton1Down() {
+  lcd_printf_line(0, "Button1 DOWN");
+}
+
+void onButton1Up(int durationMs) {
+  lcd_printf_line(0, "Button1 UP %dms", durationMs);
+}
+
+void onButton2Down() {
+  lcd_printf_line(0, "Button2 DOWN");
+}
+
+void onButton2Up(int durationMs) {
+  lcd_printf_line(0, "Button2 UP %dms", durationMs);
+}
+
+void onButton3Down() {
+  lcd_printf_line(0, "Button3 DOWN");
+}
+
+void onButton3Up(int durationMs) {
+  lcd_printf_line(0, "Button3 UP %dms", durationMs);
+}
+
+// Button handler dispatch
+typedef void (*ButtonDownFn)();
+typedef void (*ButtonUpFn)(int);
+
+static const ButtonDownFn buttonDownHandlers[4] = {
+  &onButton0Down,
+  &onButton1Down,
+  &onButton2Down,
+  &onButton3Down
+};
+
+static const ButtonUpFn buttonUpHandlers[4] = {
+  &onButton0Up,
+  &onButton1Up,
+  &onButton2Up,
+  &onButton3Up
+};
+
+int touchHeatCounter = 0;
+static void task_scan_touch() {
+  // Scan all 4 touch buttons and detect press/release edges
+  const uint8_t touches[4] = {BUTTON0_TOUCH, BUTTON1_TOUCH, BUTTON2_TOUCH, BUTTON3_TOUCH};
+  const uint32_t nowMs = millis();
+  bool buttonStateChanged = false;
+
+  for (int i = 0; i < 4; i++) {
+    uint16_t raw = touchRead(touches[i]);
+    bool nowPressed = (raw <= BUTTON_TOUCH_THRESHOLD);
+    if (nowPressed) {
+      Serial.printf("T%d=%u %s\n", i, (unsigned)raw, nowPressed ? "PRESSED" : "RELEASED");
+    }
+
+    // Detect falling edge (press)
+    if (nowPressed && !buttonStates[i].pressed) {
+      buttonStates[i].pressed = true;
+      buttonStates[i].pressStartMs = nowMs;
+      buttonDownHandlers[i]();
+      buttonStateChanged = true;
+    }
+    // Detect rising edge (release)
+    else if (!nowPressed && buttonStates[i].pressed) {
+      buttonStates[i].pressed = false;
+      int durationMs = (int)(nowMs - buttonStates[i].pressStartMs);
+      buttonUpHandlers[i](durationMs);
+      buttonStateChanged = true;
     }
   }
-}
 
-static void task_scan_touch() {
-  // Fast scan Button0 (called every ~50 ms from loop())
-  uint16_t raw = touchRead(BUTTON0_TOUCH);
-  bool nowPressed = (raw <= BUTTON0_TOUCH_THRESHOLD);
-
-  if (nowPressed) {
+  // Activate backlight on any button event
+  if (buttonStateChanged) {
     displayBacklightOn();
-  } else {
-    checkDisplayBacklightTimeout();
+  }
+
+  // Check backlight timeout when no buttons are pressed
+  bool anyButtonPressed = false;
+  for (int i = 0; i < 4; i++) {
+    if (buttonStates[i].pressed) {
+      anyButtonPressed = true;
+      break;
+    }
   }
 }
 
@@ -244,6 +316,7 @@ static Task tasks[] = {
   {  50u,      0u, &task_scan_touch },
   { 250u,      0u, &refresh_inverter_status },
   { 1000u,     0u, &task_update_temperature },
+  { 1000u,     0u, &checkDisplayBacklightTimeout },
   { 600000u,   0u, &task_diag_heap }
 };
 

@@ -8,7 +8,7 @@ static LiquidCrystal lcd(LCD_RS, LCD_EN, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
 
 // Helper that prints a formatted string to a specific LCD line (0 or 1),
 // trims to 16 characters and pads the rest with spaces to clear leftovers.
-static void lcd_printf_line(uint8_t line, const char* fmt, ...) {
+void lcd_printf_line(uint8_t line, const char* fmt, ...) {
   char buf[17];
   va_list ap;
   va_start(ap, fmt);
@@ -26,10 +26,11 @@ static void lcd_printf_line(uint8_t line, const char* fmt, ...) {
 }
 
 void display_init() {
+  // Setup LCD backlight control pin (active HIGH)
+  pinMode(LCD_BACKLIGHT_PIN, OUTPUT);
+  GPIO_FAST_OUTPUT_ENABLE(LCD_BACKLIGHT_PIN);
   lcd.begin(16, 2);
   lcd.clear();
-  lcd_printf_line(0, "Starting...");
-  lcd_printf_line(1, "");
 }
 
 void display_update_batt_soc(float soc) {
@@ -67,4 +68,24 @@ void display_update_temperature(float temp_h, float temp_l) {
 void display_update_button0(uint16_t value) {
   // Example: "Button0:  1234"
   lcd_printf_line(1, "Button0: %5u", (unsigned)value);
+}
+
+// --- Backlight control state ---
+static int16_t backlightOffCounter = 0;
+
+inline boolean isBacklightOn() {
+  return GPIO_FAST_GET_LEVEL(LCD_BACKLIGHT_PIN);
+}
+
+void displayBacklightOn() {
+  backlightOffCounter = 0;
+  GPIO_FAST_SET_1(LCD_BACKLIGHT_PIN);
+}
+
+void checkDisplayBacklightTimeout() {
+  if (isBacklightOn()) {
+    if (backlightOffCounter++ >= 10) {
+      GPIO_FAST_SET_0(LCD_BACKLIGHT_PIN);
+    }
+  }
 }
