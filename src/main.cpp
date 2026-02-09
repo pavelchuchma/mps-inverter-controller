@@ -83,6 +83,15 @@ static const char* resetReasonToStr(esp_reset_reason_t r) {
 int outputLimitW = 2000;
 float outputDutyCycle = 0.0f; // 0.0 - 1.0 (represented as percent in UI)
 
+// --- Display row definitions ---
+enum DisplayRow : uint8_t {
+  ROW_SOC = 0,
+  ROW_TEMP,
+  ROW_PV_POWER,
+  ROW_BATT_POWER,
+  ROW_COUNT
+};
+
 
 // --------- Embedded web UI helpers (LittleFS) ----------
 
@@ -136,6 +145,7 @@ void setup() {
   printWarning("[BOOT] reset reason=%d (%s)", (int)g_reset_reason, g_reset_reason_str);
   // Initialize QC1602A display (4-bit wiring)
   display_init();
+  display_set_row_count(ROW_COUNT);
 
   // Initialize webserver / LittleFS (web UI files in data/ will be uploaded to device)
   initWebServer();
@@ -183,125 +193,124 @@ struct Task {
 };
 
 // --- Button state tracking ---
-struct ButtonState {
+struct BtnState {
   bool pressed;
   uint32_t pressStartMs;
 };
 
-static ButtonState buttonStates[4] = {{false, 0}, {false, 0}, {false, 0}, {false, 0}};
+static BtnState btnStates[4] = {{false, 0}, {false, 0}, {false, 0}, {false, 0}};
 
 // --- Button handlers (called on button events) ---
-void onButton0Down() {
-  lcd_printf_line(0, "Button0 DOWN");
-}
+// Button names reflect physical position: Up, Left, Down, Right
+void onBtnUpPress() { display_scroll_up(); }
+void onBtnUpRelease(int durationMs) {}
 
-void onButton0Up(int durationMs) {
-  lcd_printf_line(0, "Button0 UP %dms", durationMs);
-}
+void onBtnLeftPress() {}
+void onBtnLeftRelease(int durationMs) {}
 
-void onButton1Down() {
-  lcd_printf_line(0, "Button1 DOWN");
-}
+void onBtnDownPress() { display_scroll_down(); }
+void onBtnDownRelease(int durationMs) {}
 
-void onButton1Up(int durationMs) {
-  lcd_printf_line(0, "Button1 UP %dms", durationMs);
-}
+void onBtnRightPress() {}
+void onBtnRightRelease(int durationMs) {}
 
-void onButton2Down() {
-  lcd_printf_line(0, "Button2 DOWN");
-}
+// Button handler dispatch (indexed: 0=Up, 1=Left, 2=Down, 3=Right)
+typedef void (*BtnPressFn)();
+typedef void (*BtnReleaseFn)(int);
 
-void onButton2Up(int durationMs) {
-  lcd_printf_line(0, "Button2 UP %dms", durationMs);
-}
-
-void onButton3Down() {
-  lcd_printf_line(0, "Button3 DOWN");
-}
-
-void onButton3Up(int durationMs) {
-  lcd_printf_line(0, "Button3 UP %dms", durationMs);
-}
-
-// Button handler dispatch
-typedef void (*ButtonDownFn)();
-typedef void (*ButtonUpFn)(int);
-
-static const ButtonDownFn buttonDownHandlers[4] = {
-  &onButton0Down,
-  &onButton1Down,
-  &onButton2Down,
-  &onButton3Down
+static const BtnPressFn btnPressHandlers[4] = {
+  &onBtnUpPress,
+  &onBtnLeftPress,
+  &onBtnDownPress,
+  &onBtnRightPress
 };
 
-static const ButtonUpFn buttonUpHandlers[4] = {
-  &onButton0Up,
-  &onButton1Up,
-  &onButton2Up,
-  &onButton3Up
+static const BtnReleaseFn btnReleaseHandlers[4] = {
+  &onBtnUpRelease,
+  &onBtnLeftRelease,
+  &onBtnDownRelease,
+  &onBtnRightRelease
 };
 
-int touchHeatCounter = 0;
 static void task_scan_touch() {
-  // Scan all 4 touch buttons and detect press/release edges
-  const uint8_t touches[4] = {BUTTON0_TOUCH, BUTTON1_TOUCH, BUTTON2_TOUCH, BUTTON3_TOUCH};
+  const uint8_t touches[4] = {BTN_UP_TOUCH, BTN_LEFT_TOUCH, BTN_DOWN_TOUCH, BTN_RIGHT_TOUCH};
   const uint32_t nowMs = millis();
-  bool buttonStateChanged = false;
+  bool btnStateChanged = false;
 
   for (int i = 0; i < 4; i++) {
     uint16_t raw = touchRead(touches[i]);
-    bool nowPressed = (raw <= BUTTON_TOUCH_THRESHOLD);
+    bool nowPressed = (raw <= BTN_TOUCH_THRESHOLD);
     if (nowPressed) {
       Serial.printf("T%d=%u %s\n", i, (unsigned)raw, nowPressed ? "PRESSED" : "RELEASED");
     }
 
     // Detect falling edge (press)
-    if (nowPressed && !buttonStates[i].pressed) {
-      buttonStates[i].pressed = true;
-      buttonStates[i].pressStartMs = nowMs;
-      buttonDownHandlers[i]();
-      buttonStateChanged = true;
+    if (nowPressed && !btnStates[i].pressed) {
+      btnStates[i].pressed = true;
+      btnStates[i].pressStartMs = nowMs;
+      btnPressHandlers[i]();
+      btnStateChanged = true;
     }
     // Detect rising edge (release)
-    else if (!nowPressed && buttonStates[i].pressed) {
-      buttonStates[i].pressed = false;
-      int durationMs = (int)(nowMs - buttonStates[i].pressStartMs);
-      buttonUpHandlers[i](durationMs);
-      buttonStateChanged = true;
+    else if (!nowPressed && btnStates[i].pressed) {
+      btnStates[i].pressed = false;
+      int durationMs = (int)(nowMs - btnStates[i].pressStartMs);
+      btnReleaseHandlers[i](durationMs);
+      btnStateChanged = true;
     }
   }
 
   // Activate backlight on any button event
-  if (buttonStateChanged) {
+  if (btnStateChanged) {
     displayBacklightOn();
-  }
-
-  // Check backlight timeout when no buttons are pressed
-  bool anyButtonPressed = false;
-  for (int i = 0; i < 4; i++) {
-    if (buttonStates[i].pressed) {
-      anyButtonPressed = true;
-      break;
-    }
   }
 }
 
 static void refresh_inverter_status() {
   InverterState s = {};
   inverter_get_status(&s);
-  // Show dashes when data are not valid
+
+  char buf[17];
   if (!g_inverter_data_valid) {
-    display_update_batt_soc(NAN);
+    display_set_row(ROW_SOC, "SoC: --");
+    display_set_row(ROW_PV_POWER, "PV: --");
+    display_set_row(ROW_BATT_POWER, "Bat: --");
   } else {
-    display_update_batt_soc(s.batt_soc);
+    snprintf(buf, sizeof(buf), "SoC: %d%%", s.batt_soc);
+    display_set_row(ROW_SOC, buf);
+
+    int pv_w = (int)(s.pv_input_current * s.pv_input_voltage);
+    snprintf(buf, sizeof(buf), "PV: %dW", pv_w);
+    display_set_row(ROW_PV_POWER, buf);
+
+    int charge_w = (int)(s.batt_voltage * s.batt_charge_current);
+    int discharge_w = -(int)(s.batt_voltage * s.batt_discharge_current);
+    snprintf(buf, sizeof(buf), "Bat: %d/%dW", charge_w, discharge_w);
+    display_set_row(ROW_BATT_POWER, buf);
+  }
+  display_redraw();
+}
+
+static void format_temp_str(char* buf, float temp) {
+  if (isnan(temp)) {
+    strcpy(buf, "--.-");
+  } else if (temp < 0) {
+    dtostrf(temp, 3, 0, buf);
+  } else {
+    dtostrf(temp, 4, 1, buf);
   }
 }
 
 static void task_update_temperature() {
-  // Read thermistors once per second and show temperature on LCD line 2
   g_temp_l = read_thermistor_temp_c(THERMISTOR_L_PIN);
   g_temp_h = read_thermistor_temp_c(THERMISTOR_H_PIN);
-  display_update_temperature(g_temp_h, g_temp_l);
+
+  char h_str[6], l_str[6], buf[17];
+  format_temp_str(h_str, g_temp_h);
+  format_temp_str(l_str, g_temp_l);
+  snprintf(buf, sizeof(buf), "T: %s/%s\xDF" "C", h_str, l_str);
+  display_set_row(ROW_TEMP, buf);
+  display_redraw();
 }
 
 static void task_diag_heap() {

@@ -2,22 +2,28 @@
 #include <Arduino.h>
 #include "config.h"
 
+#define DISPLAY_MAX_ROWS 8
+
 // Initialize the LCD. Call from setup().
 void display_init();
 
-// Update first line to show battery SOC (percentage float, e.g. 62.3).
-// This only updates the first row; it is safe to call frequently.
-void display_update_batt_soc(float soc);
+// --- Scrollable row-based display ---
 
-// Update second line to show measured temperatures in °C.
-// Format: "Temp: HH.H/LL.LC" where HH.H is High and LL.L is Low.
-// This only updates the second row; safe to call periodically.
-void display_update_temperature(float temp_h, float temp_l);
+// Set total number of logical rows (max DISPLAY_MAX_ROWS).
+void display_set_row_count(uint8_t count);
 
-// Show Button0 raw touch value.
-void display_update_button0(uint16_t value);
+// Update one row's text (index < row_count). Does NOT redraw.
+void display_set_row(uint8_t index, const char* text);
+
+// Redraw visible rows to LCD (only writes lines that actually changed).
+void display_redraw();
+
+// Scroll up/down cyclically and redraw.
+void display_scroll_up();
+void display_scroll_down();
 
 // Print formatted text to LCD line (0 or 1), auto-cleared with spaces to 16 chars.
+// Bypasses the row system — use for transient messages (e.g. WiFi connect).
 void lcd_printf_line(uint8_t line, const char* fmt, ...);
 
 // Check if LCD backlight is currently on.
