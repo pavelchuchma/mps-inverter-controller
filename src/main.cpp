@@ -17,9 +17,12 @@
 #include <LittleFS.h>
 #include <driver/adc.h>
 #include <math.h>
+#include <WireGuard-ESP32.h>
 
 IPAddress apIP(192, 168, 4, 1);
 IPAddress netMsk(255, 255, 255, 0);
+
+static WireGuard wg;
 
 WebServer server(80);
 
@@ -121,12 +124,55 @@ void createWiFiAP() {
   Serial.print("AP IP: "); Serial.println(WiFi.softAPIP());
 }
 
+void syncNTP() {
+  lcd_printf_line(1, "NTP sync...");
+  Serial.println("NTP: synchronizing time...");
+  // CET-1CEST,M3.5.0,M10.5.0/3 = Czech timezone with automatic DST
+  configTzTime("CET-1CEST,M3.5.0,M10.5.0/3", "pool.ntp.org", "time.nist.gov");
+
+  time_t now = time(nullptr);
+  int attempts = 0;
+  while (now < 24 * 3600 && attempts < 20) {
+    delay(500);
+    now = time(nullptr);
+    attempts++;
+  }
+
+  if (now < 24 * 3600) {
+    Serial.println("NTP: sync failed (timeout)");
+    lcd_printf_line(1, "NTP FAIL");
+  } else {
+    struct tm timeinfo;
+    localtime_r(&now, &timeinfo);
+    Serial.printf("NTP: synced, %02d:%02d:%02d (%s)\n",
+                  timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec,
+                  timeinfo.tm_isdst ? "CEST" : "CET");
+    lcd_printf_line(1, "NTP OK");
+  }
+}
+
+void initWireGuard() {
+  lcd_printf_line(1, "WireGuard...");
+  Serial.printf("WireGuard: connecting to %s:%d\n", WG_ENDPOINT, WG_ENDPOINT_PORT);
+
+  IPAddress localIp;
+  localIp.fromString(WG_LOCAL_IP);
+  wg.begin(localIp, WG_PRIVATE_KEY, WG_ENDPOINT, WG_PEER_PUBLIC_KEY, WG_ENDPOINT_PORT);
+
+  Serial.printf("WireGuard: tunnel up, local IP %s\n", WG_LOCAL_IP);
+  lcd_printf_line(1, "WG OK");
+}
+
 void initializeWiFi() {
   connectToWiFi();
   // createWiFiAP();
 
   Serial.printf("\nWiFi connected, IP address: ");
   Serial.println(WiFi.localIP());
+
+  syncNTP();
+  initWireGuard();
+
   if (!MDNS.begin("inverter")) {
     Serial.println("ERROR: setting up MDNS responder!");
   } else {
