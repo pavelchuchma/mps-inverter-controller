@@ -201,6 +201,18 @@ void setup() {
 
   Serial.println("HTTP :80");
 
+  // Initialize relay outputs (HIGH = relay off)
+  pinMode(RELAY_ELEMENT_L1, OUTPUT);
+  pinMode(RELAY_ELEMENT_L2, OUTPUT);
+  pinMode(RELAY_ELEMENT_COMMON_N, OUTPUT);
+  pinMode(RELAY_MOBILE_CHARGER_BLOCK, OUTPUT);
+  digitalWrite(RELAY_ELEMENT_L1, HIGH);
+  digitalWrite(RELAY_ELEMENT_L2, HIGH);
+  digitalWrite(RELAY_ELEMENT_COMMON_N, HIGH);
+  digitalWrite(RELAY_MOBILE_CHARGER_BLOCK, HIGH);
+
+  pinMode(BOILER_ON_PIN, INPUT);
+
   // Configure ADC for thermistors on GPIO34 and GPIO35
   analogReadResolution(12); // 12-bit (0..4095), default on ESP32 but explicit
   analogSetPinAttenuation(THERMISTOR_L_PIN, ADC_11db); // ~0..3.3V range

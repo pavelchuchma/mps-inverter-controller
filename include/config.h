@@ -3,6 +3,31 @@
 
 // Centralized pin configuration for the entire project.
 // If you change the wiring, adjust values here and NOT in individual modules.
+//
+// ESP32-WROOM-32 (38-pin DevKit) pinout:
+//
+//                3V3 |  1 || 20 | GND
+//             EN/RST |  2 || 21 | GPIO23  LCD_D7
+//  BOILER_ON  GPIO36 |  3 || 22 | GPIO22  LCD_EN
+//  BATTERY_RX GPIO39 |  4 || 23 | GPIO1   Serial TX0
+//  THERM_L    GPIO34 |  5 || 24 | GPIO3   Serial RX0
+//  THERM_H    GPIO35 |  6 || 25 | GPIO21  LCD_RS
+//  BATT_TX    GPIO32 |  7 || 26 | GND
+//  (free)     GPIO33 |  8 || 27 | GPIO19  LCD_D4
+//  RELAY_CHG  GPIO25 |  9 || 28 | GPIO18  LCD_D5
+//  LCD_BL     GPIO26 | 10 || 29 | GPIO5   LCD_D6 (boot)
+//  RELAY_N    GPIO27 | 11 || 30 | GPIO17  INVERTER_TX
+//  RELAY_L2   GPIO14 | 12 || 31 | GPIO16  INVERTER_RX
+//  (boot)     GPIO12 | 13 || 32 | GPIO4   BTN_UP_TOUCH
+//             GND    | 14 || 33 | GPIO0   (boot)
+//  RELAY_L1   GPIO13 | 15 || 34 | GPIO2   (boot)
+//  (SPI)      GPIO9  | 16 || 35 | GPIO15  BTN_DOWN (boot)
+//  (SPI)      GPIO10 | 17 || 36 | GPIO8   (SPI)
+//  (SPI)      GPIO11 | 18 || 37 | GPIO7   (SPI)
+//             5V0    | 19 || 38 | GPIO6   (SPI)
+//
+// GPIO6-11 = internal SPI flash, do not use
+// (boot) = strapping pin, affects boot behavior
 
 // --- Inverter UART (via MAX3232) ---
 // Feather ESP32 default: RX2=GPIO16, TX2=GPIO17
@@ -20,6 +45,19 @@
 // LCD backlight control (via NPN transistor)
 // Connected to GPIO26; drive HIGH to turn backlight ON, LOW to turn OFF.
 #define LCD_BACKLIGHT_PIN 26
+
+// --- Battery UART ---
+#define BATTERY_RX_PIN 39  // SVN, input-only — sufficient for RX
+#define BATTERY_TX_PIN 32
+
+// --- Relay outputs ---
+#define RELAY_ELEMENT_L1           13
+#define RELAY_ELEMENT_L2           14
+#define RELAY_ELEMENT_COMMON_N     27
+#define RELAY_MOBILE_CHARGER_BLOCK 25
+
+// --- Inputs ---
+#define BOILER_ON_PIN 36  // SVP, input-only
 
 // --- Capacitive touch inputs (ESP32 Touch) ---
 // Physical button positions: Up, Down
