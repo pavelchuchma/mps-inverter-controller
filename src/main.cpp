@@ -83,9 +83,6 @@ static const char* resetReasonToStr(esp_reset_reason_t r) {
   }
 }
 
-int outputLimitW = 2000;
-float outputDutyCycle = 0.0f; // 0.0 - 1.0 (represented as percent in UI)
-
 // --- Display row definitions ---
 enum DisplayRow : uint8_t {
   ROW_SOC = 0,
@@ -202,9 +199,6 @@ void setup() {
   webserver_setup_routes();
   server.begin();
 
-  // Setup PWM output pin
-  pinMode(PWM_PIN, OUTPUT);
-  digitalWrite(PWM_PIN, LOW);
   Serial.println("HTTP :80");
 
   // Configure ADC for thermistors on GPIO34 and GPIO35
@@ -244,46 +238,35 @@ struct BtnState {
   uint32_t pressStartMs;
 };
 
-static BtnState btnStates[4] = {{false, 0}, {false, 0}, {false, 0}, {false, 0}};
+static BtnState btnStates[2] = {{false, 0}, {false, 0}};
 
 // --- Button handlers (called on button events) ---
-// Button names reflect physical position: Up, Left, Down, Right
 void onBtnUpPress() { display_scroll_up(); }
 void onBtnUpRelease(int durationMs) {}
-
-void onBtnLeftPress() {}
-void onBtnLeftRelease(int durationMs) {}
 
 void onBtnDownPress() { display_scroll_down(); }
 void onBtnDownRelease(int durationMs) {}
 
-void onBtnRightPress() {}
-void onBtnRightRelease(int durationMs) {}
-
-// Button handler dispatch (indexed: 0=Up, 1=Left, 2=Down, 3=Right)
+// Button handler dispatch (indexed: 0=Up, 1=Down)
 typedef void (*BtnPressFn)();
 typedef void (*BtnReleaseFn)(int);
 
-static const BtnPressFn btnPressHandlers[4] = {
+static const BtnPressFn btnPressHandlers[2] = {
   &onBtnUpPress,
-  &onBtnLeftPress,
-  &onBtnDownPress,
-  &onBtnRightPress
+  &onBtnDownPress
 };
 
-static const BtnReleaseFn btnReleaseHandlers[4] = {
+static const BtnReleaseFn btnReleaseHandlers[2] = {
   &onBtnUpRelease,
-  &onBtnLeftRelease,
-  &onBtnDownRelease,
-  &onBtnRightRelease
+  &onBtnDownRelease
 };
 
 static void task_scan_touch() {
-  const uint8_t touches[4] = {BTN_UP_TOUCH, BTN_LEFT_TOUCH, BTN_DOWN_TOUCH, BTN_RIGHT_TOUCH};
+  const uint8_t touches[2] = {BTN_UP_TOUCH, BTN_DOWN_TOUCH};
   const uint32_t nowMs = millis();
   bool btnStateChanged = false;
 
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < 2; i++) {
     uint16_t raw = touchRead(touches[i]);
     bool nowPressed = (raw <= BTN_TOUCH_THRESHOLD);
     if (nowPressed) {
@@ -396,12 +379,6 @@ void loop() {
     }
   }
 
-  // Software PWM: period 2000 ms (2s). Drive `PWM_PIN` HIGH for
-  // outputDutyCycle * period, otherwise LOW. `outputDutyCycle` is 0.0-1.0.
-  const uint32_t pwmPeriodMs = 2000;
-  uint32_t phase = millis() % pwmPeriodMs;
-  uint32_t onTime = (uint32_t)round(outputDutyCycle * (float)pwmPeriodMs);
-  digitalWrite(PWM_PIN, (phase < onTime) ? HIGH : LOW);
   // Small yield to allow WiFi/RTOS background tasks to run and avoid starvation
   delay(5);
 }

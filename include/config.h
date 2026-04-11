@@ -21,16 +21,11 @@
 // Connected to GPIO26; drive HIGH to turn backlight ON, LOW to turn OFF.
 #define LCD_BACKLIGHT_PIN 26
 
-// --- PWM output ---
-#define PWM_PIN 25
-
 // --- Capacitive touch inputs (ESP32 Touch) ---
-// Physical button positions: Up, Left, Down, Right
+// Physical button positions: Up, Down
 
 #define BTN_UP_TOUCH    4   // Touch0 (GPIO4)
-#define BTN_LEFT_TOUCH  14  // Touch1 (GPIO14)
-#define BTN_DOWN_TOUCH  13  // Touch2 (GPIO13)
-#define BTN_RIGHT_TOUCH 15  // Touch3 (GPIO15)
+#define BTN_DOWN_TOUCH 15  // Touch3 (GPIO15)
 
 // Touch threshold for detecting a press. Raw values vary by board/environment.
 #define BTN_TOUCH_THRESHOLD 35

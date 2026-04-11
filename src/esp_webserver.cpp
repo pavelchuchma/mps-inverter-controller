@@ -58,10 +58,6 @@ void webserver_set_reset_info(int reason, const char* reason_str) {
   g_reset_reason_str_ws = reason_str ? reason_str : "";
 }
 
-// ---- Externals from main.cpp (control state reflected in JSON/commands) ----
-extern int outputLimitW;
-extern float outputDutyCycle;
-
 // --------- JSON helpers (moved from main.cpp) ----------
 static String makeStatusJson() {
   JsonDocument doc;
@@ -94,11 +90,6 @@ static String makeStatusJson() {
   doc["ts_ms"] = s.ts_ms;
   doc["temp_h"] = isnan(g_temp_h) ? JsonVariant() : g_temp_h;
   doc["temp_l"] = isnan(g_temp_l) ? JsonVariant() : g_temp_l;
-
-  // Include some “control state” so UI can reflect it
-
-  doc["output_limit_w"] = outputLimitW;
-  doc["output_duty_cycle"] = outputDutyCycle;
 
   // System diagnostics
   doc["reset_reason"] = (int)g_reset_reason_ws;
@@ -137,24 +128,6 @@ static String handleCommand(JsonDocument& doc) {
   if (!name) {
     Serial.println("[CMD] missing name field");
     return makeErrJson("bad_request", "Missing 'name'");
-  }
-
-  // Example command: set_output_limit_w (int)
-  if (strcmp(name, "set_output_limit_w") == 0) {
-    if (doc["value"].isNull()) return makeErrJson("bad_request", "Missing 'value'");
-    int v = doc["value"].as<int>();
-    if (v < 0 || v > 10000) return makeErrJson("range", "output_limit_w out of range");
-    outputLimitW = v;
-    return makeAckJson("output limit updated");
-  }
-
-  // Example command: set_output_duty_cycle (float 0.0 - 1.0)
-  if (strcmp(name, "set_output_duty_cycle") == 0) {
-    if (doc["value"].isNull()) return makeErrJson("bad_request", "Missing 'value'");
-    float v = doc["value"].as<float>();
-    if (v < 0.0f || v > 1.0f) return makeErrJson("range", "output_duty_cycle out of range");
-    outputDutyCycle = v;
-    return makeAckJson("duty cycle updated");
   }
 
   return makeErrJson("unknown_cmd", "Unknown command name");

@@ -22,24 +22,7 @@ function formatMsToHMS(ms) {
   return `${hh}:${mm}:${ss}`;
 }
 
-const limEl = $("lim");
-let lastServerLimit = -1;
-const dutyEl = $("duty");
-let lastServerDuty = -1;
 let resetReasonLogged = false;
-
-function updateModified() {
-  const modified = Number(limEl.value) !== lastServerLimit;
-  limEl.classList.toggle('modified', modified);
-}
-
-function updateModifiedDuty() {
-  const modified = Number(dutyEl.value) !== lastServerDuty;
-  dutyEl.classList.toggle('modified', modified);
-}
-
-updateModified();
-updateModifiedDuty();
 
 async function send(obj) {
   const s = JSON.stringify(obj);
@@ -107,20 +90,6 @@ async function fetchStatus() {
         resetReasonLogged = true;
       }
 
-      const lim = Math.round(j.output_limit_w ?? -1);
-      if (lastServerLimit !== lim) {
-        lastServerLimit = lim;
-        limEl.value = lim;
-        $("limVal").textContent = lim;
-      }
-      const duty = j.output_duty_cycle !== undefined ? Math.round(j.output_duty_cycle * 100) : -1;
-      if (lastServerDuty !== duty) {
-        lastServerDuty = duty;
-        dutyEl.value = duty;
-        $("dutyVal").textContent = (duty >= 0 ? (duty + ' %') : "—");
-      }
-      updateModified();
-      updateModifiedDuty();
       return;
     }
     logln("MSG: " + JSON.stringify(j));
@@ -136,27 +105,6 @@ async function fetchStatus() {
     clearTimeout(to);
   }
 }
-
-limEl.addEventListener("input", () => {
-  $("limVal").textContent = limEl.value;
-  updateModified();
-});
-
-dutyEl.addEventListener("input", () => {
-  $("dutyVal").textContent = dutyEl.value + ' %';
-  updateModifiedDuty();
-});
-
-$("btnApply").addEventListener("click", () => {
-  const v = Number($("lim").value);
-  send({ type: "cmd", name: "set_output_limit_w", value: v });
-});
-
-$("btnApplyDuty").addEventListener("click", () => {
-  const pct = Number($("duty").value);
-  const v = pct / 100.0;
-  send({ type: "cmd", name: "set_output_duty_cycle", value: v });
-});
 
 // Initial fetch and schedule polling
 fetchStatus();
