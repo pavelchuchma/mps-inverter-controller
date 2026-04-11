@@ -1,3 +1,7 @@
+### Setup
+ * remote rpi: `10.200.0.20`
+ * esp console: http://10.200.0.30/
+
 ### LCD QC1602A — direct wiring (4-bit mode) according to `src/display.cpp`
 
 This project uses a 16×2 character LCD QC1602A (HD44780-compatible controller) in 4‑bit parallel mode via the `LiquidCrystal` library.
