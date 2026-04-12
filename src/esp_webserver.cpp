@@ -5,6 +5,7 @@
 #include <ArduinoJson.h>
 #include "inverter_comm.h"
 #include "config.h"
+#include "relay.h"
 
 // `server` is defined in main.cpp; declare it here for use in this TU.
 extern WebServer server;
@@ -92,8 +93,7 @@ static String makeStatusJson() {
   doc["temp_h"] = isnan(g_temp_h) ? JsonVariant() : g_temp_h;
   doc["temp_l"] = isnan(g_temp_l) ? JsonVariant() : g_temp_l;
 
-  // Mobile charger relay: LOW = relay on = charging enabled
-  doc["charger_on"] = (digitalRead(RELAY_MOBILE_CHARGER) == LOW);
+  doc["charger_on"] = isMobileChargerOn();
 
   // System diagnostics
   doc["reset_reason"] = (int)g_reset_reason_ws;
@@ -136,8 +136,7 @@ static String handleCommand(JsonDocument& doc) {
 
   if (strcmp(name, "set_charger") == 0) {
     bool on = doc["value"].as<bool>();
-    // LOW = relay on = charging enabled; HIGH = relay off = charging disabled
-    digitalWrite(RELAY_MOBILE_CHARGER, on ? LOW : HIGH);
+    setMobileCharger(on);
     Serial.printf("[CMD] set_charger: %s\n", on ? "ON" : "OFF");
     return makeAckJson(on ? "Charger ON" : "Charger OFF");
   }
@@ -171,9 +170,50 @@ static void handleCmdHttp() {
   server.send(200, "application/json", reply);
 }
 
+// --------- LittleFS file upload via HTTP multipart ---------
+static File uploadFile;
+
+static void handleUploadPage() {
+  server.send(200, "text/html; charset=utf-8",
+    "<!doctype html><html><head><meta charset='utf-8'>"
+    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+    "<title>Upload</title></head><body style='font-family:system-ui;padding:18px'>"
+    "<h2>Upload file to LittleFS</h2>"
+    "<form method='POST' action='/upload' enctype='multipart/form-data'>"
+    "<input type='file' name='file' multiple><br><br>"
+    "<button type='submit' style='padding:8px 16px;font-size:14px'>Upload</button>"
+    "</form><br><a href='/'>Back</a>"
+    "</body></html>");
+}
+
+static void handleUploadComplete() {
+  server.send(200, "text/plain", "OK — upload complete. Refresh the main page.");
+}
+
+static void handleUploadData() {
+  HTTPUpload& upload = server.upload();
+  if (upload.status == UPLOAD_FILE_START) {
+    String filename = upload.filename;
+    if (!filename.startsWith("/")) filename = "/" + filename;
+    Serial.printf("[UPLOAD] start: %s\n", filename.c_str());
+    uploadFile = LittleFS.open(filename, "w");
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    if (uploadFile) {
+      uploadFile.write(upload.buf, upload.currentSize);
+    }
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (uploadFile) {
+      uploadFile.close();
+      Serial.printf("[UPLOAD] done: %s (%u bytes)\n", upload.filename.c_str(), upload.totalSize);
+    }
+  }
+}
+
 void webserver_setup_routes() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/status", HTTP_GET, handleStatus);
   server.on("/cmd", HTTP_POST, handleCmdHttp);
+  server.on("/upload", HTTP_GET, handleUploadPage);
+  server.on("/upload", HTTP_POST, handleUploadComplete, handleUploadData);
   server.onNotFound(handleNotFound);
 }

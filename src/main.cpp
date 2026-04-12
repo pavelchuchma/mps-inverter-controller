@@ -9,6 +9,7 @@
 #include "esp_webserver.h"
 #include "display.h"
 #include "inverter_comm.h"
+#include "relay.h"
 #include <esp_system.h>
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
@@ -209,7 +210,7 @@ void setup() {
   digitalWrite(RELAY_ELEMENT_L1, HIGH);
   digitalWrite(RELAY_ELEMENT_L2, HIGH);
   digitalWrite(RELAY_ELEMENT_COMMON_N, HIGH);
-  digitalWrite(RELAY_MOBILE_CHARGER, HIGH);
+  setMobileCharger(true);
 
   pinMode(BOILER_ON_PIN, INPUT);
 
