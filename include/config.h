@@ -54,7 +54,7 @@
 #define RELAY_ELEMENT_L1           13
 #define RELAY_ELEMENT_L2           14
 #define RELAY_ELEMENT_COMMON_N     27
-#define RELAY_MOBILE_CHARGER_BLOCK 25
+#define RELAY_MOBILE_CHARGER 25
 
 // --- Inputs ---
 #define BOILER_ON_PIN 36  // SVP, input-only

@@ -23,6 +23,13 @@ function formatMsToHMS(ms) {
 }
 
 let resetReasonLogged = false;
+let chargerOn = false;
+
+async function toggleCharger() {
+  const newState = !chargerOn;
+  await send({ type: "cmd", name: "set_charger", value: newState });
+  await fetchStatus();
+}
 
 async function send(obj) {
   const s = JSON.stringify(obj);
@@ -81,6 +88,13 @@ async function fetchStatus() {
       $("pv_charging_power").textContent = valid && j.pv_charging_power !== undefined && j.pv_charging_power !== null ? String(Math.round(j.pv_charging_power)) : "—";
       $("g_inverter_mode_code").textContent = j.g_inverter_mode_code !== undefined && j.g_inverter_mode_code !== null ? j.g_inverter_mode_code : "—";
       $("g_inverter_mode_name").textContent = j.g_inverter_mode_name !== undefined && j.g_inverter_mode_name !== null ? j.g_inverter_mode_name : "—";
+
+      if (j.charger_on !== undefined) {
+        chargerOn = !!j.charger_on;
+        $("charger_status").textContent = chargerOn ? "ON" : "OFF";
+        $("charger_status").style.color = chargerOn ? "#22c55e" : "#ef4444";
+        $("charger_btn").textContent = chargerOn ? "Turn OFF" : "Turn ON";
+      }
 
       if (!resetReasonLogged && (j.reset_reason !== undefined || j.reset_reason_str !== undefined)) {
         const rr = (j.reset_reason_str || "").toString();

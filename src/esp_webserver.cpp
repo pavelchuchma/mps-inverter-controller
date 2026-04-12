@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include "inverter_comm.h"
+#include "config.h"
 
 // `server` is defined in main.cpp; declare it here for use in this TU.
 extern WebServer server;
@@ -91,6 +92,9 @@ static String makeStatusJson() {
   doc["temp_h"] = isnan(g_temp_h) ? JsonVariant() : g_temp_h;
   doc["temp_l"] = isnan(g_temp_l) ? JsonVariant() : g_temp_l;
 
+  // Mobile charger relay: LOW = relay on = charging enabled
+  doc["charger_on"] = (digitalRead(RELAY_MOBILE_CHARGER) == LOW);
+
   // System diagnostics
   doc["reset_reason"] = (int)g_reset_reason_ws;
   doc["reset_reason_str"] = g_reset_reason_str_ws;
@@ -128,6 +132,14 @@ static String handleCommand(JsonDocument& doc) {
   if (!name) {
     Serial.println("[CMD] missing name field");
     return makeErrJson("bad_request", "Missing 'name'");
+  }
+
+  if (strcmp(name, "set_charger") == 0) {
+    bool on = doc["value"].as<bool>();
+    // LOW = relay on = charging enabled; HIGH = relay off = charging disabled
+    digitalWrite(RELAY_MOBILE_CHARGER, on ? LOW : HIGH);
+    Serial.printf("[CMD] set_charger: %s\n", on ? "ON" : "OFF");
+    return makeAckJson(on ? "Charger ON" : "Charger OFF");
   }
 
   return makeErrJson("unknown_cmd", "Unknown command name");
