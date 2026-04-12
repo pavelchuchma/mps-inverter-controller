@@ -94,6 +94,7 @@ static String makeStatusJson() {
   doc["temp_l"] = isnan(g_temp_l) ? JsonVariant() : g_temp_l;
 
   doc["charger_on"] = isMobileChargerOn();
+  doc["boiler_power"] = (int)getBoilerPower();
 
   // System diagnostics
   doc["reset_reason"] = (int)g_reset_reason_ws;
@@ -139,6 +140,19 @@ static String handleCommand(JsonDocument& doc) {
     setMobileCharger(on);
     Serial.printf("[CMD] set_charger: %s\n", on ? "ON" : "OFF");
     return makeAckJson(on ? "Charger ON" : "Charger OFF");
+  }
+
+  if (strcmp(name, "set_boiler") == 0) {
+    int val = doc["value"].as<int>();
+    if (val < 0 || val > 3) {
+      return makeErrJson("bad_value", "boiler power must be 0..3");
+    }
+    setBoilerPower((BoilerPower)val);
+    const char* labels[] = {"OFF (0W)", "500W", "1000W", "2000W"};
+    Serial.printf("[CMD] set_boiler: %s\n", labels[val]);
+    char msg[32];
+    snprintf(msg, sizeof(msg), "Boiler %s", labels[val]);
+    return makeAckJson(msg);
   }
 
   return makeErrJson("unknown_cmd", "Unknown command name");

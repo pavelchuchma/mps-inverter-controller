@@ -5,26 +5,27 @@
 // If you change the wiring, adjust values here and NOT in individual modules.
 //
 // ESP32-WROOM-32 (38-pin DevKit) pinout:
+// (keep columns aligned after every change)
 //
-//                             3V3 |  1 || 20 | GND
-//                          EN/RST |  2 || 21 | GPIO23  LCD_D7
-//          BOILER_ON_PIN   GPIO36 |  3 || 22 | GPIO22  LCD_EN
-//         BATTERY_RX_PIN   GPIO39 |  4 || 23 | GPIO1   Serial TX0
-//        THERMISTOR_L_PIN  GPIO34 |  5 || 24 | GPIO3   Serial RX0
-//        THERMISTOR_H_PIN  GPIO35 |  6 || 25 | GPIO21  LCD_RS
-//         BATTERY_TX_PIN   GPIO32 |  7 || 26 | GND
-//                  (free)  GPIO33 |  8 || 27 | GPIO19  LCD_D4
-//    RELAY_MOBILE_CHARGER  GPIO25 |  9 || 28 | GPIO18  LCD_D5
-//       LCD_BACKLIGHT_PIN  GPIO26 | 10 || 29 | GPIO5   LCD_D6 (boot)
-//  RELAY_ELEMENT_COMMON_N  GPIO27 | 11 || 30 | GPIO17  INVERTER_TX_PIN
-//        RELAY_ELEMENT_L2  GPIO14 | 12 || 31 | GPIO16  INVERTER_RX_PIN
-//                  (boot)  GPIO12 | 13 || 32 | GPIO4   BTN_UP_TOUCH
-//                             GND | 14 || 33 | GPIO0   (boot)
-//        RELAY_ELEMENT_L1  GPIO13 | 15 || 34 | GPIO2   (boot)
-//                   (SPI)  GPIO9  | 16 || 35 | GPIO15  BTN_DOWN_TOUCH (boot)
-//                   (SPI)  GPIO10 | 17 || 36 | GPIO8   (SPI)
-//                   (SPI)  GPIO11 | 18 || 37 | GPIO7   (SPI)
-//                             5V0 | 19 || 38 | GPIO6   (SPI)
+//                              3V3 |  1 || 20 | GND
+//                           EN/RST |  2 || 21 | GPIO23  LCD_D7
+//           BOILER_ON_PIN   GPIO36 |  3 || 22 | GPIO22  LCD_EN
+//          BATTERY_RX_PIN   GPIO39 |  4 || 23 | GPIO1   Serial TX0
+//         THERMISTOR_L_PIN  GPIO34 |  5 || 24 | GPIO3   Serial RX0
+//         THERMISTOR_H_PIN  GPIO35 |  6 || 25 | GPIO21  LCD_RS
+//          BATTERY_TX_PIN   GPIO32 |  7 || 26 | GND
+//                   (free)  GPIO33 |  8 || 27 | GPIO19  LCD_D4
+//     RELAY_MOBILE_CHARGER  GPIO25 |  9 || 28 | GPIO18  LCD_D5
+//        LCD_BACKLIGHT_PIN  GPIO26 | 10 || 29 | GPIO5   LCD_D6 (boot)
+//   RELAY_BOILER_COMMON_N   GPIO27 | 11 || 30 | GPIO17  INVERTER_TX_PIN
+//         RELAY_BOILER_L2   GPIO14 | 12 || 31 | GPIO16  INVERTER_RX_PIN
+//                   (boot)  GPIO12 | 13 || 32 | GPIO4   BTN_UP_TOUCH
+//                              GND | 14 || 33 | GPIO0   (boot)
+//         RELAY_BOILER_L1   GPIO13 | 15 || 34 | GPIO2   (boot)
+//                    (SPI)  GPIO9  | 16 || 35 | GPIO15  BTN_DOWN_TOUCH (boot)
+//                    (SPI)  GPIO10 | 17 || 36 | GPIO8   (SPI)
+//                    (SPI)  GPIO11 | 18 || 37 | GPIO7   (SPI)
+//                              5V0 | 19 || 38 | GPIO6   (SPI)
 //
 // GPIO6-11 = internal SPI flash, do not use
 // (boot) = strapping pin, affects boot behavior
@@ -51,9 +52,9 @@
 #define BATTERY_TX_PIN 32
 
 // --- Relay outputs ---
-#define RELAY_ELEMENT_L1           13
-#define RELAY_ELEMENT_L2           14
-#define RELAY_ELEMENT_COMMON_N     27
+#define RELAY_BOILER_L1           13
+#define RELAY_BOILER_L2           14
+#define RELAY_BOILER_COMMON_N     27
 #define RELAY_MOBILE_CHARGER 25
 
 // --- Inputs ---

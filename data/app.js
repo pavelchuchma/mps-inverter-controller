@@ -24,10 +24,17 @@ function formatMsToHMS(ms) {
 
 let resetReasonLogged = false;
 let chargerOn = false;
+let boilerPower = 0;
+const boilerLabels = ["OFF", "500W", "1000W", "2000W"];
 
 async function toggleCharger() {
   const newState = !chargerOn;
   await send({ type: "cmd", name: "set_charger", value: newState });
+  await fetchStatus();
+}
+
+async function setBoiler(level) {
+  await send({ type: "cmd", name: "set_boiler", value: level });
   await fetchStatus();
 }
 
@@ -94,6 +101,16 @@ async function fetchStatus() {
         $("charger_status").textContent = chargerOn ? "ON" : "OFF";
         $("charger_status").style.color = chargerOn ? "#22c55e" : "#ef4444";
         $("charger_btn").textContent = chargerOn ? "Turn OFF" : "Turn ON";
+      }
+
+      if (j.boiler_power !== undefined) {
+        boilerPower = j.boiler_power;
+        $("boiler_status").textContent = boilerLabels[boilerPower] || "—";
+        $("boiler_status").style.color = boilerPower > 0 ? "#ef4444" : "";
+        document.querySelectorAll(".boiler-btn").forEach((btn, i) => {
+          btn.style.background = (i === boilerPower) ? "#dbeafe" : "";
+          btn.style.fontWeight = (i === boilerPower) ? "700" : "";
+        });
       }
 
       if (!resetReasonLogged && (j.reset_reason !== undefined || j.reset_reason_str !== undefined)) {

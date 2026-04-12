@@ -202,14 +202,9 @@ void setup() {
 
   Serial.println("HTTP :80");
 
-  // Initialize relay outputs (HIGH = relay off)
-  pinMode(RELAY_ELEMENT_L1, OUTPUT);
-  pinMode(RELAY_ELEMENT_L2, OUTPUT);
-  pinMode(RELAY_ELEMENT_COMMON_N, OUTPUT);
+  // Initialize relay outputs
+  boilerRelayInit();
   pinMode(RELAY_MOBILE_CHARGER, OUTPUT);
-  digitalWrite(RELAY_ELEMENT_L1, HIGH);
-  digitalWrite(RELAY_ELEMENT_L2, HIGH);
-  digitalWrite(RELAY_ELEMENT_COMMON_N, HIGH);
   setMobileCharger(true);
 
   pinMode(BOILER_ON_PIN, INPUT);
@@ -355,20 +350,12 @@ static void task_update_temperature() {
   display_redraw();
 }
 
-static void task_diag_heap() {
-  // Periodic diagnostics to catch memory/stack issues causing resets after hours
-  size_t freeHeap = ESP.getFreeHeap();
-  size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT);
-  printWarning("heap free=%u, largest=%u", (unsigned)freeHeap, (unsigned)largest);
-}
-
 // Task table and their periods
 static Task tasks[] = {
   {  50u,      0u, &task_scan_touch },
   { 250u,      0u, &refresh_inverter_status },
   { 1000u,     0u, &task_update_temperature },
   { 1000u,     0u, &checkDisplayBacklightTimeout },
-  { 600000u,   0u, &task_diag_heap }
 };
 
 void loop() {

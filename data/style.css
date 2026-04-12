@@ -7,7 +7,8 @@ body{font-family:system-ui,sans-serif;margin:0;padding:18px;background:#f6f7f9;}
 .pill{font-size:12px;padding:4px 8px;border-radius:999px;background:#eef2ff;}
 .err{background:#ffecec;}
 .ok{background:#eaffea;}
-button{padding:10px 14px;font-size:14px;border-radius:12px;border:1px solid #ddd;background:#fff;}
+button{padding:10px 14px;font-size:14px;border-radius:12px;border:1px solid #ddd;background:#fff;cursor:pointer;}
+.boiler-btn{padding:8px 12px;font-size:13px;flex:1;min-width:50px;}
 input[type="range"]{width:100%;}
 input[type="range"].modified{accent-color:#ef4444;box-shadow:0 0 0 6px rgba(239,68,68,0.08);}
 input[type="range"].modified:focus{box-shadow:0 0 0 8px rgba(239,68,68,0.12);}
