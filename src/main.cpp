@@ -180,7 +180,7 @@ void initializeWiFi() {
 
 
 void setup() {
-  Serial.begin(921600);
+  Serial.begin(115200);
   // Log reset reason to help diagnose unexpected restarts
   g_reset_reason = esp_reset_reason();
   g_reset_reason_str = resetReasonToStr(g_reset_reason);
