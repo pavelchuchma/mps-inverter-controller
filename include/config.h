@@ -35,6 +35,10 @@
 #define INVERTER_RX_PIN 16
 #define INVERTER_TX_PIN 17
 
+// --- Battery UART ---
+#define BATTERY_RX_PIN 39  // SVN, input-only — sufficient for RX
+#define BATTERY_TX_PIN 32
+
 // --- LCD QC1602A (4-bit parallel mode) ---
 #define LCD_RS 21
 #define LCD_EN 22
@@ -46,10 +50,6 @@
 // LCD backlight control (via NPN transistor)
 // Connected to GPIO26; drive HIGH to turn backlight ON, LOW to turn OFF.
 #define LCD_BACKLIGHT_PIN 26
-
-// --- Battery UART ---
-#define BATTERY_RX_PIN 39  // SVN, input-only — sufficient for RX
-#define BATTERY_TX_PIN 32
 
 // --- Relay outputs ---
 #define RELAY_BOILER_L1           13

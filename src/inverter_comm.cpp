@@ -46,7 +46,21 @@ static void build_frame(const String& payload, uint8_t* out, size_t& out_len) {
   out_len = plen + 3;
 }
 
+// Drain whatever has arrived on Serial2 (battery port loopback tap) and print as hex.
+// Used only for wiring verification — no parsing.
+static void drain_and_log_serial2() {
+  if (!Serial2.available()) return;
+  Serial.print("[BAT] RX (hex): ");
+  while (Serial2.available()) {
+    int b = Serial2.read();
+    if (b < 0) break;
+    Serial.printf("%02X ", (uint8_t)b);
+  }
+  Serial.println();
+}
+
 // Read from Serial1 until CR or timeout. Returns length in bytes stored in buf.
+// Simultaneously drains Serial2 (battery port) for loopback wiring test.
 static size_t read_until_cr(HardwareSerial& s, uint8_t* buf, size_t max_len, unsigned long timeout_ms) {
   size_t idx = 0;
   unsigned long start = millis();
@@ -57,10 +71,12 @@ static size_t read_until_cr(HardwareSerial& s, uint8_t* buf, size_t max_len, uns
       buf[idx++] = (uint8_t)b;
       if ((uint8_t)b == 0x0D) break;
     } else {
+      // drain_and_log_serial2();
       if (millis() - start >= timeout_ms) break;
       vTaskDelay(pdMS_TO_TICKS(2));
     }
   }
+  // drain_and_log_serial2();
   return idx;
 }
 
@@ -112,14 +128,14 @@ static bool send_command_and_get_payload(const String& cmd, String& out_payload)
     return false;
   }
 
+  // Print raw response immediately for debugging (before CRC check)
+  debug_print_rx(rx, rx_len);
+
   // Response should end with CR
   if (rx[rx_len - 1] != 0x0D) {
     Serial.printf("[INV] Incomplete response for cmd '%s' (no CR)\n", cmd.c_str());
     return false;
   }
-
-  // Print raw response immediately for debugging (before CRC check)
-  // debug_print_rx(rx, rx_len);
 
   // body without CR
   size_t body_len = rx_len - 1;
@@ -300,6 +316,9 @@ void inverter_comm_init() {
   }
   // Initialize Serial1 for RS232 via MAX3232 at 2400 8N1
   Serial1.begin(2400, SERIAL_8N1, INVERTER_RX_PIN, INVERTER_TX_PIN);
+  // Initialize Serial2 on the battery port pins — wiring/loopback test only.
+  // Same baud as Serial1 so bytes tapped via a loopback wire can be decoded.
+  // Serial2.begin(2400, SERIAL_8N1, BATTERY_RX_PIN, BATTERY_TX_PIN);
 
   // Create background task
   xTaskCreatePinnedToCore(
