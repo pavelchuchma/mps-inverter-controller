@@ -25,26 +25,26 @@ enum BoilerPower : uint8_t {
 };
 
 // Individual heating relay setters (on = relay energized)
-// Element relays: LOW = energized (on), HIGH = not energized (off)
+// Element relays: HIGH = energized (on), LOW = not energized (off)
 inline void setRelayBoilerL1(bool on) {
-  digitalWrite(RELAY_BOILER_L1, on ? LOW : HIGH);
+  digitalWrite(RELAY_BOILER_L1, on ? HIGH : LOW);
 }
 inline bool isRelayBoilerL1On() {
-  return digitalRead(RELAY_BOILER_L1) == LOW;
+  return digitalRead(RELAY_BOILER_L1) == HIGH;
 }
 
 inline void setRelayBoilerL2(bool on) {
-  digitalWrite(RELAY_BOILER_L2, on ? LOW : HIGH);
+  digitalWrite(RELAY_BOILER_L2, on ? HIGH : LOW);
 }
 inline bool isRelayBoilerL2On() {
-  return digitalRead(RELAY_BOILER_L2) == LOW;
+  return digitalRead(RELAY_BOILER_L2) == HIGH;
 }
 
 inline void setRelayBoilerCommonN(bool on) {
-  digitalWrite(RELAY_BOILER_COMMON_N, on ? LOW : HIGH);
+  digitalWrite(RELAY_BOILER_COMMON_N, on ? HIGH : LOW);
 }
 inline bool isRelayBoilerCommonNOn() {
-  return digitalRead(RELAY_BOILER_COMMON_N) == LOW;
+  return digitalRead(RELAY_BOILER_COMMON_N) == HIGH;
 }
 
 void boilerRelayInit();

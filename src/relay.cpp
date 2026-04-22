@@ -1,6 +1,6 @@
 #include "relay.h"
 
-// Relay convention: HIGH = relay not energized (off), LOW = relay energized (on)
+// Relay convention: HIGH = relay energized (on), LOW = relay not energized (off)
 
 static BoilerPower currentPower = BOILER_OFF;
 static bool roundRobin500 = false;
@@ -14,9 +14,13 @@ static bool roundRobin1000 = false;
 //   3) connect endpoints
 static void applyRelays(bool l1, bool l2, bool commonN) {
   setRelayBoilerL1(false);
+  delay(50);
   setRelayBoilerL2(false);
+  delay(50);
   setRelayBoilerCommonN(commonN);
+  delay(50);
   setRelayBoilerL1(l1);
+  delay(50);
   setRelayBoilerL2(l2);
 }
 
@@ -31,6 +35,10 @@ void boilerRelayInit() {
 }
 
 void setBoilerPower(BoilerPower power) {
+  if (power == currentPower) {
+    return; // No change
+  }
+
   switch (power) {
   case BOILER_OFF:
     //  L1=N, L2=N, Common=disconnected
@@ -42,11 +50,7 @@ void setBoilerPower(BoilerPower power) {
     //  A: L1=L, L2=N, Common=disconnected
     //  B: L1=N, L2=L, Common=disconnected
     roundRobin500 = !roundRobin500;
-    if (roundRobin500) {
-      applyRelays(true, false, false);
-    } else {
-      applyRelays(false, true, false);
-    }
+    applyRelays(true ^ roundRobin500, false ^ roundRobin500, true);
     break;
 
   case BOILER_1000W:
@@ -54,17 +58,13 @@ void setBoilerPower(BoilerPower power) {
     //  A: L1=L, L2=N, Common=N  → E1 powered
     //  B: L1=N, L2=L, Common=N  → E2 powered
     roundRobin1000 = !roundRobin1000;
-    if (roundRobin1000) {
-      applyRelays(true, false, true);
-    } else {
-      applyRelays(false, true, true);
-    }
+    applyRelays(true ^ roundRobin1000, false ^ roundRobin1000, false);
     break;
 
   case BOILER_2000W:
     // Both elements at full voltage
     //  L1=L, L2=L, Common=N
-    applyRelays(true, true, true);
+    applyRelays(true, true, false);
     break;
   }
 
