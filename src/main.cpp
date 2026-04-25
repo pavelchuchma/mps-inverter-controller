@@ -207,7 +207,7 @@ void setup() {
   pinMode(RELAY_MOBILE_CHARGER, OUTPUT);
   setMobileCharger(true);
 
-  pinMode(BOILER_ON_PIN, INPUT);
+  pinMode(BOILER_ON_PIN, INPUT_PULLDOWN);
 
   // Configure ADC for thermistors on GPIO34 and GPIO35
   analogReadResolution(12); // 12-bit (0..4095), default on ESP32 but explicit

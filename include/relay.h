@@ -51,6 +51,11 @@ void boilerRelayInit();
 void setBoilerPower(BoilerPower power);
 BoilerPower getBoilerPower();
 
+// Reads the BOILER_ON_PIN input — true when boiler is reported as on
+inline bool isBoilerOn() {
+  return digitalRead(BOILER_ON_PIN) == HIGH;
+}
+
 // --- Mobile charger relay ---
 // HIGH = on (charging enabled), LOW = off
 inline void setMobileCharger(bool on) {

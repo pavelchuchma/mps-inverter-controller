@@ -103,6 +103,12 @@ async function fetchStatus() {
         $("charger_btn").textContent = chargerOn ? "Turn OFF" : "Turn ON";
       }
 
+      if (j.boiler_on !== undefined) {
+        const on = !!j.boiler_on;
+        $("boiler_on").textContent = on ? "ON" : "OFF";
+        $("boiler_on").style.color = on ? "#22c55e" : "#ef4444";
+      }
+
       if (j.boiler_power !== undefined) {
         boilerPower = j.boiler_power;
         $("boiler_status").textContent = boilerLabels[boilerPower] || "—";

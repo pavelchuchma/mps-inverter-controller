@@ -9,12 +9,12 @@
 //
 //                              3V3 |  1 || 20 | GND
 //                           EN/RST |  2 || 21 | GPIO23  LCD_D7
-//           BOILER_ON_PIN   GPIO36 |  3 || 22 | GPIO22  LCD_EN
+//                   (free)  GPIO36 |  3 || 22 | GPIO22  LCD_EN
 //          BATTERY_RX_PIN   GPIO39 |  4 || 23 | GPIO1   Serial TX0
 //         THERMISTOR_L_PIN  GPIO34 |  5 || 24 | GPIO3   Serial RX0
 //         THERMISTOR_H_PIN  GPIO35 |  6 || 25 | GPIO21  LCD_RS
 //          BATTERY_TX_PIN   GPIO32 |  7 || 26 | GND
-//                   (free)  GPIO33 |  8 || 27 | GPIO19  LCD_D4
+//           BOILER_ON_PIN   GPIO33 |  8 || 27 | GPIO19  LCD_D4
 //     RELAY_MOBILE_CHARGER  GPIO25 |  9 || 28 | GPIO18  LCD_D5
 //        LCD_BACKLIGHT_PIN  GPIO26 | 10 || 29 | GPIO5   LCD_D6 (boot)
 //   RELAY_BOILER_COMMON_N   GPIO27 | 11 || 30 | GPIO17  INVERTER_TX_PIN
@@ -58,7 +58,7 @@
 #define RELAY_MOBILE_CHARGER 25
 
 // --- Inputs ---
-#define BOILER_ON_PIN 36  // SVP, input-only
+#define BOILER_ON_PIN 33  // supports INPUT_PULLDOWN
 
 // --- Capacitive touch inputs (ESP32 Touch) ---
 // Physical button positions: Up, Down
