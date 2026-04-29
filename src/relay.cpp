@@ -11,7 +11,11 @@ static constexpr uint8_t STATE_BITS[4] = {
 
 static constexpr uint16_t RELAY_SETTLE_MS = 30;  // spec ≥ 30 ms
 
-static BoilerPower currentPower = BOILER_OFF;
+// volatile: currentPower may be read from another FreeRTOS task
+// (inverter control). 1-byte enum reads are atomic on Xtensa.
+static volatile BoilerPower currentPower = BOILER_OFF;
+static volatile BoilerPower targetPower  = BOILER_OFF;
+static uint32_t lastStepMs = 0;
 
 static void writeBits(uint8_t bits) {
   setRelayBoilerA(bits & 0b001);
@@ -25,20 +29,26 @@ void boilerRelayInit() {
   pinMode(RELAY_BOILER_C, OUTPUT);
   writeBits(STATE_BITS[BOILER_OFF]);
   currentPower = BOILER_OFF;
+  targetPower  = BOILER_OFF;
+  lastStepMs   = millis();
 }
 
 void setBoilerPower(BoilerPower target) {
-  if (target == currentPower) return;
+  targetPower = target;
+}
 
-  // Walk the chain one rank at a time. Adjacent STATE_BITS differ in
-  // exactly one bit, so each step toggles a single relay along a
-  // safe edge (OFF↔500, 500↔1000, 1000↔2000).
-  int8_t step = (target > currentPower) ? +1 : -1;
-  for (int8_t r = (int8_t)currentPower; r != (int8_t)target; r += step) {
-    writeBits(STATE_BITS[r + step]);
-    delay(RELAY_SETTLE_MS);
-  }
-  currentPower = target;
+void tickBoiler() {
+  if (currentPower == targetPower) return;
+  uint32_t now = millis();
+  if (now - lastStepMs < RELAY_SETTLE_MS) return;
+
+  // Adjacent STATE_BITS differ in exactly one bit, so each step toggles
+  // a single relay along a safe edge of the OFF↔500↔1000↔2000 chain.
+  int8_t step = (targetPower > currentPower) ? +1 : -1;
+  uint8_t nextRank = (uint8_t)currentPower + step;
+  writeBits(STATE_BITS[nextRank]);
+  currentPower = (BoilerPower)nextRank;
+  lastStepMs = now;
 }
 
 BoilerPower getBoilerPower() {

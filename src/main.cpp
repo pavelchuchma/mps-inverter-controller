@@ -361,6 +361,7 @@ static Task tasks[] = {
 void loop() {
   uint32_t t0 = millis();
   server.handleClient();
+  tickBoiler();
   uint32_t t1 = millis();
 
   // Log if handleClient takes unusually long (indicates blocking)

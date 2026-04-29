@@ -23,6 +23,11 @@
 // transition arc. The state machine therefore moves only along the
 // linear chain OFF ↔ 500 W ↔ 1000 W ↔ 2000 W, one relay per step,
 // with a settling delay between steps.
+//
+// API is non-blocking: setBoilerPower() only stores the target, and
+// tickBoiler() — called from the main loop — advances by exactly one
+// rank per tick, no faster than RELAY_SETTLE_MS apart. getBoilerPower()
+// returns the actually-achieved state (used by the inverter control).
 
 enum BoilerPower : uint8_t {
   BOILER_OFF    = 0,
@@ -55,6 +60,7 @@ inline bool isRelayBoilerCOn() {
 
 void boilerRelayInit();
 void setBoilerPower(BoilerPower power);
+void tickBoiler();
 BoilerPower getBoilerPower();
 
 // Reads the BOILER_ON_PIN input — true when boiler is reported as on
