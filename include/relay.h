@@ -6,7 +6,7 @@
 // Two 1kW elements (E1, E2) in series, controlled by 3 relays:
 //   RELAY_BOILER_L1       — end of E1:  OFF=N, ON=L
 //   RELAY_BOILER_L2       — end of E2:  OFF=N, ON=L
-//   RELAY_BOILER_COMMON_N — junction:   OFF=disconnected, ON=N
+//   RELAY_BOILER_COMMON_N — junction:   OFF=N, ON=disconnected
 //
 // Power levels:
 //   0W   — all off
@@ -53,7 +53,7 @@ BoilerPower getBoilerPower();
 
 // Reads the BOILER_ON_PIN input — true when boiler is reported as on
 inline bool isBoilerOn() {
-  return digitalRead(BOILER_ON_PIN) == HIGH;
+  return digitalRead(BOILER_ON_PIN) == LOW;
 }
 
 // --- Mobile charger relay ---
