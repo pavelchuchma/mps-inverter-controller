@@ -185,6 +185,17 @@ static void handleCmdHttp() {
   server.send(200, "application/json", reply);
 }
 
+// --------- Phone battery status endpoint ---------
+static void handlePhoneBattery() {
+  String body = server.hasArg("plain") ? server.arg("plain") : String();
+  Serial.printf("[PHONE_BATTERY] %s %s from %s, body: %s\n",
+                server.method() == HTTP_POST ? "POST" : "?",
+                server.uri().c_str(),
+                server.client().remoteIP().toString().c_str(),
+                body.c_str());
+  server.send(200, "text/plain", "OK");
+}
+
 // --------- LittleFS file upload via HTTP multipart ---------
 static File uploadFile;
 
@@ -228,6 +239,7 @@ void webserver_setup_routes() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/status", HTTP_GET, handleStatus);
   server.on("/cmd", HTTP_POST, handleCmdHttp);
+  server.on("/phone_battery", HTTP_POST, handlePhoneBattery);
   server.on("/upload", HTTP_GET, handleUploadPage);
   server.on("/upload", HTTP_POST, handleUploadComplete, handleUploadData);
   server.onNotFound(handleNotFound);
