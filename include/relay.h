@@ -3,19 +3,26 @@
 #include "config.h"
 
 // --- Boiler element power control ---
-// Two 1kW elements (E1, E2) in series, controlled by 3 relays:
-//   RELAY_BOILER_L1       — end of E1:  OFF=N, ON=L
-//   RELAY_BOILER_L2       — end of E2:  OFF=N, ON=L
-//   RELAY_BOILER_COMMON_N — junction:   OFF=N, ON=disconnected
+// Two 1 kW resistive elements (R1, R2 @ 230 V AC) and three SPDT relays
+// (A, B, C). Convention: state = 1 = relay energized = COM↔NO,
+//                       state = 0 = relay de-energized = COM↔NC.
 //
-// Power levels:
-//   0W   — all off
-//   500W — both elements in series (half voltage each)
-//   1000W — one element at full voltage
-//   2000W — both elements at full voltage (parallel via common N)
+// Wiring (see doc/heater_relay_control_spec.md and doc/boiler_relay_schema.png):
+//   L → C.COM,  N → B.COM,  A.COM → R1.top
+//   R1.bottom = R2.top  (node Y);  B.NO → Y
+//   A.NO = C.NO = R2.bottom (node X)
+//   A.NC = B.NC (node Z);  C.NC unused
 //
-// For 500W and 1000W, two equivalent relay configurations exist.
-// Round-robin alternates between them to even out element and relay wear.
+// Canonical states (A, B, C):
+//   OFF      (0, 0, 0)  – 0 W
+//   500 W    (0, 0, 1)  – R1 + R2 in series
+//   1000 W   (0, 1, 1)  – only R2
+//   2000 W   (1, 1, 1)  – R1 || R2
+//
+// Safety: toggling A while (B==0 && C==1) shorts L–N through A's
+// transition arc. The state machine therefore moves only along the
+// linear chain OFF ↔ 500 W ↔ 1000 W ↔ 2000 W, one relay per step,
+// with a settling delay between steps.
 
 enum BoilerPower : uint8_t {
   BOILER_OFF    = 0,
@@ -24,27 +31,26 @@ enum BoilerPower : uint8_t {
   BOILER_2000W  = 3,
 };
 
-// Individual heating relay setters (on = relay energized)
-// Element relays: HIGH = energized (on), LOW = not energized (off)
-inline void setRelayBoilerL1(bool on) {
-  digitalWrite(RELAY_BOILER_L1, on ? HIGH : LOW);
+// Individual heating relay setters (on = relay energized = COM↔NO).
+inline void setRelayBoilerA(bool on) {
+  digitalWrite(RELAY_BOILER_A, on ? HIGH : LOW);
 }
-inline bool isRelayBoilerL1On() {
-  return digitalRead(RELAY_BOILER_L1) == HIGH;
-}
-
-inline void setRelayBoilerL2(bool on) {
-  digitalWrite(RELAY_BOILER_L2, on ? HIGH : LOW);
-}
-inline bool isRelayBoilerL2On() {
-  return digitalRead(RELAY_BOILER_L2) == HIGH;
+inline bool isRelayBoilerAOn() {
+  return digitalRead(RELAY_BOILER_A) == HIGH;
 }
 
-inline void setRelayBoilerCommonN(bool on) {
-  digitalWrite(RELAY_BOILER_COMMON_N, on ? HIGH : LOW);
+inline void setRelayBoilerB(bool on) {
+  digitalWrite(RELAY_BOILER_B, on ? HIGH : LOW);
 }
-inline bool isRelayBoilerCommonNOn() {
-  return digitalRead(RELAY_BOILER_COMMON_N) == HIGH;
+inline bool isRelayBoilerBOn() {
+  return digitalRead(RELAY_BOILER_B) == HIGH;
+}
+
+inline void setRelayBoilerC(bool on) {
+  digitalWrite(RELAY_BOILER_C, on ? HIGH : LOW);
+}
+inline bool isRelayBoilerCOn() {
+  return digitalRead(RELAY_BOILER_C) == HIGH;
 }
 
 void boilerRelayInit();
