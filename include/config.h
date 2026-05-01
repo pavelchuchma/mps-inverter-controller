@@ -17,11 +17,11 @@
 //           BOILER_ON_PIN   GPIO33 |  8 || 27 | GPIO19  LCD_D4
 //     RELAY_MOBILE_CHARGER  GPIO25 |  9 || 28 | GPIO18  LCD_D5
 //        LCD_BACKLIGHT_PIN  GPIO26 | 10 || 29 | GPIO5   LCD_D6 (boot)
-//          RELAY_BOILER_C   GPIO27 | 11 || 30 | GPIO17  INVERTER_TX_PIN
+//          RELAY_BOILER_A   GPIO27 | 11 || 30 | GPIO17  INVERTER_TX_PIN
 //          RELAY_BOILER_B   GPIO14 | 12 || 31 | GPIO16  INVERTER_RX_PIN
 //                   (boot)  GPIO12 | 13 || 32 | GPIO4   BTN_UP_TOUCH
 //                              GND | 14 || 33 | GPIO0   (boot)
-//          RELAY_BOILER_A   GPIO13 | 15 || 34 | GPIO2   (boot)
+//          RELAY_BOILER_C   GPIO13 | 15 || 34 | GPIO2   (boot)
 //                    (SPI)  GPIO9  | 16 || 35 | GPIO15  BTN_DOWN_TOUCH (boot)
 //                    (SPI)  GPIO10 | 17 || 36 | GPIO8   (SPI)
 //                    (SPI)  GPIO11 | 18 || 37 | GPIO7   (SPI)
@@ -54,9 +54,9 @@
 // --- Relay outputs ---
 // Boiler element control: see doc/heater_relay_control_spec.md and
 // doc/boiler_relay_schema.png for the SPDT wiring of A, B, C.
-#define RELAY_BOILER_A            13
+#define RELAY_BOILER_A            27
 #define RELAY_BOILER_B            14
-#define RELAY_BOILER_C            27
+#define RELAY_BOILER_C            13
 #define RELAY_MOBILE_CHARGER 25
 
 // --- Inputs ---

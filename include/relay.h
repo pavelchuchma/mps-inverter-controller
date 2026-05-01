@@ -8,18 +8,18 @@
 //                       state = 0 = relay de-energized = COM↔NC.
 //
 // Wiring (see doc/heater_relay_control_spec.md and doc/boiler_relay_schema.png):
-//   L → C.COM,  N → B.COM,  A.COM → R1.top
+//   L → A.COM,  N → B.COM,  C.COM → R1.top
 //   R1.bottom = R2.top  (node Y);  B.NO → Y
-//   A.NO = C.NO = R2.bottom (node X)
-//   A.NC = B.NC (node Z);  C.NC unused
+//   C.NO = A.NO = R2.bottom (node X)
+//   C.NC = B.NC (node Z);  A.NC unused
 //
 // Canonical states (A, B, C):
 //   OFF      (0, 0, 0)  – 0 W
-//   500 W    (0, 0, 1)  – R1 + R2 in series
-//   1000 W   (0, 1, 1)  – only R2
+//   500 W    (1, 0, 0)  – R1 + R2 in series
+//   1000 W   (1, 1, 0)  – only R2
 //   2000 W   (1, 1, 1)  – R1 || R2
 //
-// Safety: toggling A while (B==0 && C==1) shorts L–N through A's
+// Safety: toggling C while (B==0 && A==1) shorts L–N through C's
 // transition arc. The state machine therefore moves only along the
 // linear chain OFF ↔ 500 W ↔ 1000 W ↔ 2000 W, one relay per step,
 // with a settling delay between steps.

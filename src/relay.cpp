@@ -4,8 +4,8 @@
 // Index = power rank along the safe chain.
 static constexpr uint8_t STATE_BITS[4] = {
   0b000,  // OFF      (A=0, B=0, C=0)
-  0b100,  // 500 W    (A=0, B=0, C=1)
-  0b110,  // 1000 W   (A=0, B=1, C=1)
+  0b001,  // 500 W    (A=1, B=0, C=0)
+  0b011,  // 1000 W   (A=1, B=1, C=0)
   0b111,  // 2000 W   (A=1, B=1, C=1)
 };
 

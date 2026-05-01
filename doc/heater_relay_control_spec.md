@@ -16,23 +16,23 @@ When relay is de-energized (state = 0): `COM` connects to `NC`.
 
 | From         | To                                  |
 |--------------|-------------------------------------|
-| `L` (mains)  | `C.COM`                             |
+| `L` (mains)  | `A.COM`                             |
 | `N` (mains)  | `B.COM`                             |
-| `A.COM`      | `R1.top`                            |
+| `C.COM`      | `R1.top`                            |
 | `R1.bottom`  | `R2.top` (direct wire, node `Y`)    |
 | `B.NO`       | node `Y` (between R1 and R2)        |
-| `A.NO`       | node `X` (= `C.NO` = `R2.bottom`)   |
-| `C.NO`       | node `X`                            |
+| `C.NO`       | node `X` (= `A.NO` = `R2.bottom`)   |
+| `A.NO`       | node `X`                            |
 | `R2.bottom`  | node `X`                            |
-| `A.NC`       | `B.NC` (node `Z`)                   |
+| `C.NC`       | `B.NC` (node `Z`)                   |
 | `B.NC`       | node `Z`                            |
-| `C.NC`       | unused (leave disconnected)         |
+| `A.NC`       | unused (leave disconnected)         |
 
 ### Nodes summary
 
-- **X** = `A.NO` + `C.NO` + `R2.bottom`
+- **X** = `C.NO` + `A.NO` + `R2.bottom`
 - **Y** = `B.NO` + `R1.bottom` + `R2.top`
-- **Z** = `A.NC` + `B.NC`
+- **Z** = `C.NC` + `B.NC`
 
 ## State table
 
@@ -40,13 +40,13 @@ State is encoded as `(A, B, C)`. Power dissipated by R1 + R2 in watts.
 
 | A | B | C | Power   | Active path                                          |
 |---|---|---|---------|------------------------------------------------------|
-| 0 | 0 | 0 | 0 W     | L disconnected (C.NO open)                           |
-| 0 | 0 | 1 | 500 W   | L → C.NO → R2 → Y → R1 → A.COM → A.NC → B.NC → N (R1+R2 in **series**) |
+| 0 | 0 | 0 | 0 W     | L disconnected (A.NO open)                           |
+| 1 | 0 | 0 | 500 W   | L → A.NO → R2 → Y → R1 → C.COM → C.NC → B.NC → N (R1+R2 in **series**) |
 | 0 | 1 | 0 | 0 W     | L disconnected                                       |
-| 0 | 1 | 1 | 1000 W  | L → C.NO → R2 → Y → B.NO → N (only R2 active)        |
-| 1 | 0 | 0 | 0 W     | L disconnected                                       |
+| 1 | 1 | 0 | 1000 W  | L → A.NO → R2 → Y → B.NO → N (only R2 active)        |
+| 0 | 0 | 1 | 0 W     | L disconnected                                       |
 | 1 | 0 | 1 | 0 W     | L on both ends of nothing useful (N isolated at Z)   |
-| 1 | 1 | 0 | 0 W     | L disconnected                                       |
+| 0 | 1 | 1 | 0 W     | L disconnected                                       |
 | 1 | 1 | 1 | 2000 W  | R1 and R2 both directly across L–N (**parallel**)    |
 
 ### Canonical states
@@ -54,59 +54,59 @@ State is encoded as `(A, B, C)`. Power dissipated by R1 + R2 in watts.
 | Power     | A | B | C |
 |-----------|---|---|---|
 | OFF       | 0 | 0 | 0 |
-| 0.5 kW    | 0 | 0 | 1 |
-| 1 kW      | 0 | 1 | 1 |
+| 0.5 kW    | 1 | 0 | 0 |
+| 1 kW      | 1 | 1 | 0 |
 | 2 kW      | 1 | 1 | 1 |
 
 ## ⚠️ Critical safety constraint: short-circuit risk
 
 There is exactly one dangerous condition during transitions:
 
-> **Switching relay A while `B == 0` AND `C == 1` causes an L–N short circuit
-> through relay A's contact arc.**
+> **Switching relay C while `B == 0` AND `A == 1` causes an L–N short circuit
+> through relay C's contact arc.**
 
-Mechanism: during A's transition, `A.COM` is briefly bridged between `A.NO` and `A.NC`
-via the moving contact / arc. With `C == 1`, `A.NO` (= node X) is at potential L.
-With `B == 0`, `A.NC` (= node Z) is at potential N (via B.NC → B.COM = N).
-Result: L–N short across A's contacts → high fault current, contact welding,
+Mechanism: during C's transition, `C.COM` is briefly bridged between `C.NO` and `C.NC`
+via the moving contact / arc. With `A == 1`, `C.NO` (= node X) is at potential L.
+With `B == 0`, `C.NC` (= node Z) is at potential N (via B.NC → B.COM = N).
+Result: L–N short across C's contacts → high fault current, contact welding,
 arc damage, possible fire.
 
 ### Safe-transition rule
 
-**Before toggling A, ensure `B == 1` OR `C == 0`.**
+**Before toggling C, ensure `B == 1` OR `A == 0`.**
 
-Equivalent formulation: A may only change state when at least one of these holds:
-- `C == 0` (mains L is disconnected at C, no path can short)
+Equivalent formulation: C may only change state when at least one of these holds:
+- `A == 0` (mains L is disconnected at A, no path can short)
 - `B == 1` (N is routed to node Y via B.NO, not to Z via B.NC)
 
 ### Other transitions (all safe)
 
 - **Toggling B** (any A, C): no L–N short possible.
-- **Toggling C** (any A, B): C has no NC connection, so no transition arc creates a short.
+- **Toggling A** (any B, C): A has no NC connection, so no transition arc creates a short.
 
 ## Recommended state-transition graph
 
 Use only these edges between canonical states. Each edge represents toggling **one** relay.
 
 ```
-OFF (0,0,0) ──[C: 0→1]──> 0.5 kW (0,0,1) ──[B: 0→1]──> 1 kW (0,1,1) ──[A: 0→1]──> 2 kW (1,1,1)
+OFF (0,0,0) ──[A: 0→1]──> 0.5 kW (1,0,0) ──[B: 0→1]──> 1 kW (1,1,0) ──[C: 0→1]──> 2 kW (1,1,1)
   ▲                            ▲                            ▲                            │
   │                            │                            │                            │
-  └──[C: 1→0]──────────────────┴──[B: 1→0]──────────────────┴──[A: 1→0]─────────────────┘
+  └──[A: 1→0]──────────────────┴──[B: 1→0]──────────────────┴──[C: 1→0]─────────────────┘
 ```
 
-**Forbidden direct transitions** (would require simultaneous toggle of A and B,
-or pass through the dangerous A-toggle condition):
+**Forbidden direct transitions** (would require simultaneous toggle of C and B,
+or pass through the dangerous C-toggle condition):
 
 - `0.5 kW ↔ 2 kW` directly → always go via 1 kW
-- `OFF → 1 kW` directly → go via 0.5 kW (only toggles C, then B; both safe)
+- `OFF → 1 kW` directly → go via 0.5 kW (only toggles A, then B; both safe)
 - `OFF → 2 kW` directly → go via 0.5 kW → 1 kW → 2 kW
 
 ### Going to OFF
 
-Always set `C = 0` first, then optionally reset A and B. With `C = 0` no current
-flows regardless of A and B states, so resetting A while B = 0 is safe (the
-dangerous condition requires `C = 1`).
+Always set `A = 0` first, then optionally reset C and B. With `A = 0` no current
+flows regardless of C and B states, so resetting C while B = 0 is safe (the
+dangerous condition requires `A = 1`).
 
 ## Implementation notes
 
@@ -121,8 +121,8 @@ conservative **delay of at least 30 ms** between consecutive toggles.
 ```python
 class HeaterController:
     OFF      = (0, 0, 0)
-    P_500W   = (0, 0, 1)
-    P_1000W  = (0, 1, 1)
+    P_500W   = (1, 0, 0)
+    P_1000W  = (1, 1, 0)
     P_2000W  = (1, 1, 1)
 
     # Adjacency list of safe single-relay transitions
