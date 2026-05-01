@@ -9,7 +9,7 @@
 //
 //                              3V3 |  1 || 20 | GND
 //                           EN/RST |  2 || 21 | GPIO23  LCD_D7
-//                   (free)  GPIO36 |  3 || 22 | GPIO22  LCD_EN
+// RELAY_BOILER_B_VERIFY_PIN GPIO36 |  3 || 22 | GPIO22  LCD_EN
 //          BATTERY_RX_PIN   GPIO39 |  4 || 23 | GPIO1   Serial TX0
 //         THERMISTOR_L_PIN  GPIO34 |  5 || 24 | GPIO3   Serial RX0
 //         THERMISTOR_H_PIN  GPIO35 |  6 || 25 | GPIO21  LCD_RS
@@ -61,6 +61,15 @@
 
 // --- Inputs ---
 #define BOILER_ON_PIN 33  // supports INPUT_PULLDOWN
+
+// Opto-isolated AC voltage detector wired across relay B's NO contact
+// (between node Y = R1.bottom/R2.top and N = B.COM). Reads HIGH (cold)
+// when B has physically energized to NO; LOW (hot) when B is still in NC
+// while the load is energized. Used by tickBoiler() to verify B's actual
+// state before/while toggling relay C. GPIO36 is input-only (ADC1_CH0)
+// and has NO internal pull-up — opto module must provide its own pull-up
+// on the output line, or add an external 10k to 3V3.
+#define RELAY_BOILER_B_VERIFY_PIN 36
 
 // --- Capacitive touch inputs (ESP32 Touch) ---
 // Physical button positions: Up, Down

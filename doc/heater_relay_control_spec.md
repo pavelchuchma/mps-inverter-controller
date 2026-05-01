@@ -155,6 +155,44 @@ walk up or down the chain.
   but reduces arc wear (e.g., 100 nF + 100 Ω in series).
 - **Fuse on L** sized for 10 A (slow-blow) gives faster fault clearance than
   the breaker alone.
+- **Relay B verifier** — opto-isolated AC voltage detector wired across B's
+  NO contact (between node Y and N). Confirms B's *actual* mechanical state
+  before the controller toggles relay C. See next section.
+
+### Relay B physical verification and emergency shutdown
+
+The software state machine assumes the *commanded* B state matches reality.
+If B fails (welded NC contact, broken coil, dead driver, loose wiring) while
+the controller believes B = 1, the next C-toggle would short L–N through
+C's transition arc.
+
+**HW**: an opto-isolated AC voltage detector is wired between node Y
+(`B.NO` = junction `R1.bottom`–`R2.top`) and N (`B.COM`). Reads:
+
+- **HIGH (cold, V ≈ 0)** when Y = N via B.NO → B is physically energized
+  to NO. Safe.
+- **LOW (hot, V ≠ 0)** when Y is not at N — B failed to make NO. Unsafe
+  if commanded B = 1.
+
+The output drives `RELAY_BOILER_B_VERIFY_PIN` (GPIO36, input-only, no
+internal pull-up — opto module must provide its own pull-up to 3V3).
+
+**SW**: `tickBoiler()` consults the verifier on every settled tick where
+`currentPower` has commanded B = 1 (i.e. 1000 W or 2000 W). On mismatch
+(commanded B = 1, sensor reads "hot"), `emergencyShutdown()`:
+
+1. Drives A = 0 (this alone removes the L–N short risk — A.NC is unused).
+2. Waits one settle interval, drives B = 0.
+3. Waits, drives C = 0.
+4. Sets sticky `boilerFault` flag and a static-string reason.
+
+While `boilerFault` is set, `setBoilerPower()` and `tickBoiler()` are no-ops.
+The flag is cleared only by reboot — a B failure indicates hardware damage
+that requires physical inspection, not auto-recovery.
+
+The verifier is **not** consulted in OFF or 500 W: in 500 W, Y is the
+R1–R2 midpoint at ~115 V (legitimately "hot"), so a check there would
+false-positive.
 
 ### State persistence
 

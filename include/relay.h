@@ -28,6 +28,15 @@
 // tickBoiler() — called from the main loop — advances by exactly one
 // rank per tick, no faster than RELAY_SETTLE_MS apart. getBoilerPower()
 // returns the actually-achieved state (used by the inverter control).
+//
+// Physical B verification: an opto-isolated AC voltage detector wired
+// across B's NO contact (between node Y and N) reports whether B has
+// physically energized. tickBoiler() consults it on every settled tick
+// where the *current* state has commanded B=1 (1000 W or 2000 W). On
+// mismatch (commanded B=1 but sensor reads "hot" = N is at Z, not Y),
+// the controller calls emergencyShutdown(): drives A=0, B=0, C=0 in
+// that order, sets a sticky boilerFault flag. Once faulted,
+// setBoilerPower() and tickBoiler() are no-ops until reboot.
 
 enum BoilerPower : uint8_t {
   BOILER_OFF    = 0,
@@ -58,10 +67,23 @@ inline bool isRelayBoilerCOn() {
   return digitalRead(RELAY_BOILER_C) == HIGH;
 }
 
+// Reads the opto-isolated AC voltage detector across relay B's NO contact.
+// HIGH = "cold" (Y at N via B.NO, B is physically energized).
+// LOW  = "hot"  (Y not at N — B failed to close to NO).
+inline bool isRelayBoilerBVerifiedOn() {
+  return digitalRead(RELAY_BOILER_B_VERIFY_PIN) == HIGH;
+}
+
 void boilerRelayInit();
 void setBoilerPower(BoilerPower power);
 void tickBoiler();
 BoilerPower getBoilerPower();
+
+// Sticky fault state. Set by emergencyShutdown() when relay B's commanded
+// state disagrees with the verifier sensor. Cleared only by reboot.
+// While set, setBoilerPower() and tickBoiler() are no-ops.
+bool isBoilerFault();
+const char* getBoilerFaultReason();   // nullptr if no fault
 
 // Reads the BOILER_ON_PIN input — true when boiler is reported as on
 inline bool isBoilerOn() {

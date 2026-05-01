@@ -96,6 +96,8 @@ static String makeStatusJson() {
   doc["charger_on"] = isMobileChargerOn();
   doc["boiler_power"] = (int)getBoilerPower();
   doc["boiler_on"] = isBoilerOn();
+  doc["boiler_fault"] = isBoilerFault();
+  doc["boiler_fault_reason"] = getBoilerFaultReason() ? getBoilerFaultReason() : "";
 
   // System diagnostics
   doc["reset_reason"] = (int)g_reset_reason_ws;

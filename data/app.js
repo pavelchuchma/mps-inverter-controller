@@ -25,6 +25,7 @@ function formatMsToHMS(ms) {
 let resetReasonLogged = false;
 let chargerOn = false;
 let boilerPower = 0;
+let boilerFault = false;
 const boilerLabels = ["OFF", "500W", "1000W", "2000W"];
 
 async function toggleCharger() {
@@ -109,13 +110,35 @@ async function fetchStatus() {
         $("boiler_on").style.color = on ? "#22c55e" : "#ef4444";
       }
 
+      const newFault = !!j.boiler_fault;
+      if (newFault && !boilerFault) {
+        const reason = j.boiler_fault_reason || "(unspecified)";
+        logln("BOILER FAULT: " + reason);
+      }
+      boilerFault = newFault;
+
       if (j.boiler_power !== undefined) {
         boilerPower = j.boiler_power;
-        $("boiler_status").textContent = boilerLabels[boilerPower] || "—";
-        $("boiler_status").style.color = boilerPower > 0 ? "#ef4444" : "";
+        const statusEl = $("boiler_status");
+        if (boilerFault) {
+          statusEl.textContent = "ERROR";
+          statusEl.style.color = "#ffffff";
+          statusEl.style.background = "#ef4444";
+          statusEl.style.fontWeight = "700";
+          statusEl.style.padding = "0 6px";
+        } else {
+          statusEl.textContent = boilerLabels[boilerPower] || "—";
+          statusEl.style.color = boilerPower > 0 ? "#ef4444" : "";
+          statusEl.style.background = "";
+          statusEl.style.fontWeight = "";
+          statusEl.style.padding = "";
+        }
         document.querySelectorAll(".boiler-btn").forEach((btn, i) => {
-          btn.style.background = (i === boilerPower) ? "#dbeafe" : "";
-          btn.style.fontWeight = (i === boilerPower) ? "700" : "";
+          btn.disabled = boilerFault;
+          btn.style.opacity = boilerFault ? "0.4" : "";
+          btn.style.cursor = boilerFault ? "not-allowed" : "";
+          btn.style.background = (!boilerFault && i === boilerPower) ? "#dbeafe" : "";
+          btn.style.fontWeight = (!boilerFault && i === boilerPower) ? "700" : "";
         });
       }
 
