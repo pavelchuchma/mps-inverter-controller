@@ -21,7 +21,7 @@ static uint32_t lastStepMs = 0;
 static volatile bool boilerFault = false;
 static const char* boilerFaultReason = nullptr;  // static-string only
 
-static inline bool commandedBHigh(BoilerPower p) {
+static inline bool isCommandedBHigh(BoilerPower p) {
   return STATE_BITS[p] & 0b010;
 }
 
@@ -74,10 +74,14 @@ void tickBoiler() {
   uint32_t now = millis();
   if (now - lastStepMs < RELAY_SETTLE_MS) return;
 
-  // Single B-verification: whenever currentPower has commanded B=1
-  // and we're settled, the verifier must agree. Covers both stable
-  // monitoring and the pre-toggle gate before C-toggles.
-  if (commandedBHigh(currentPower) && !isRelayBoilerBVerifiedOn()) {
+  if (!isBoilerOn()) {
+    // Mains absent at A.COM: no heating possible, no signal for the
+    // verifier. Force OFF target and skip the B check.
+    targetPower = BOILER_OFF;
+  } else if (isCommandedBHigh(currentPower) && !isRelayBoilerBVerifiedOn()) {
+    // Whenever currentPower has commanded B=1 and we're settled, the
+    // verifier must agree. Covers both stable monitoring and the
+    // pre-toggle gate before C-toggles.
     emergencyShutdown("Relay B mismatch: commanded ON, sensor reads OFF");
     return;
   }
