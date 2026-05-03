@@ -88,6 +88,7 @@ static const char* resetReasonToStr(esp_reset_reason_t r) {
 enum DisplayRow : uint8_t {
   ROW_SOC = 0,
   ROW_TEMP,
+  ROW_BOILER,
   ROW_PV_POWER,
   ROW_BATT_POWER,
   ROW_COUNT
@@ -350,11 +351,24 @@ static void task_update_temperature() {
   display_redraw();
 }
 
+static void task_update_boiler() {
+  char buf[17];
+  if (isBoilerFault()) {
+    snprintf(buf, sizeof(buf), "Boiler: ERROR");
+  } else {
+    static const char* labels[] = {"OFF", "500W", "1000W", "2000W"};
+    snprintf(buf, sizeof(buf), "Boiler: %s", labels[getBoilerPower()]);
+  }
+  display_set_row(ROW_BOILER, buf);
+  display_redraw();
+}
+
 // Task table and their periods
 static Task tasks[] = {
   {  50u,      0u, &task_scan_touch },
   { 250u,      0u, &refresh_inverter_status },
   { 1000u,     0u, &task_update_temperature },
+  { 1000u,     0u, &task_update_boiler },
   { 1000u,     0u, &checkDisplayBacklightTimeout },
 };
 
