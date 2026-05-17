@@ -230,7 +230,7 @@ void setup() {
   }
 
   // Initialize inverter RS232 communication (background task)
-  inverter_comm_init();
+   inverter_comm_init(INVERTER_RX_PIN, INVERTER_TX_PIN);
 }
 
 

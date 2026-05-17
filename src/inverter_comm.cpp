@@ -310,15 +310,12 @@ static void inverter_task(void* arg) {
   }
 }
 
-void inverter_comm_init() {
+void inverter_comm_init(int rx_pin, int tx_pin) {
   if (!g_inv_mutex) {
     g_inv_mutex = xSemaphoreCreateMutex();
   }
   // Initialize Serial1 for RS232 via MAX3232 at 2400 8N1
-  Serial1.begin(2400, SERIAL_8N1, INVERTER_RX_PIN, INVERTER_TX_PIN);
-  // Initialize Serial2 on the battery port pins — wiring/loopback test only.
-  // Same baud as Serial1 so bytes tapped via a loopback wire can be decoded.
-  // Serial2.begin(2400, SERIAL_8N1, BATTERY_RX_PIN, BATTERY_TX_PIN);
+  Serial1.begin(2400, SERIAL_8N1, rx_pin, tx_pin);
 
   // Create background task
   xTaskCreatePinnedToCore(

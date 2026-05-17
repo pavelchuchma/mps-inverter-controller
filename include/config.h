@@ -17,8 +17,8 @@
 //           BOILER_ON_PIN   GPIO33 |  8 || 27 | GPIO19  LCD_D4
 //     RELAY_MOBILE_CHARGER  GPIO25 |  9 || 28 | GPIO18  LCD_D5
 //        LCD_BACKLIGHT_PIN  GPIO26 | 10 || 29 | GPIO5   LCD_D6 (boot)
-//          RELAY_BOILER_A   GPIO27 | 11 || 30 | GPIO17  INVERTER_TX_PIN
-//          RELAY_BOILER_B   GPIO14 | 12 || 31 | GPIO16  INVERTER_RX_PIN
+//          RELAY_BOILER_A   GPIO27 | 11 || 30 | GPIO17  INVERTER_RX_PIN
+//          RELAY_BOILER_B   GPIO14 | 12 || 31 | GPIO16  INVERTER_TX_PIN
 //                   (boot)  GPIO12 | 13 || 32 | GPIO4   BTN_UP_TOUCH
 //                              GND | 14 || 33 | GPIO0   (boot)
 //          RELAY_BOILER_C   GPIO13 | 15 || 34 | GPIO2   (boot)
@@ -32,8 +32,8 @@
 
 // --- Inverter UART (via MAX3232) ---
 // Feather ESP32 default: RX2=GPIO16, TX2=GPIO17
-#define INVERTER_RX_PIN 16
-#define INVERTER_TX_PIN 17
+#define INVERTER_RX_PIN 17
+#define INVERTER_TX_PIN 16
 
 // --- Battery UART ---
 #define BATTERY_RX_PIN 39  // SVN, input-only — sufficient for RX

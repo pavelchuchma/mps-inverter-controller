@@ -43,7 +43,7 @@ extern char g_inverter_mode_code; // single-letter mode code from QMOD
 extern char g_inverter_mode_name[32];
 
 // Initialize inverter communication and start background polling task
-void inverter_comm_init();
+void inverter_comm_init(int rx_pin, int tx_pin);
 
 // Access functions that copy protected data (thread-safe)
 bool inverter_get_status(InverterState* out);
