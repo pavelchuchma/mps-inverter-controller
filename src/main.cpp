@@ -156,8 +156,6 @@ void setup() {
   g_reset_reason = esp_reset_reason();
   g_reset_reason_str = resetReasonToStr(g_reset_reason);
   Serial.printf("[BOOT] reset reason=%d (%s)\n", (int)g_reset_reason, g_reset_reason_str);
-  // Also log reboot reason as a WARN (will append to LittleFS via printWarning)
-  printWarning("[BOOT] reset reason=%d (%s)", (int)g_reset_reason, g_reset_reason_str);
   // Initialize QC1602A display (4-bit wiring)
   display_init();
   display_set_row_count(ROW_COUNT);
@@ -166,6 +164,12 @@ void setup() {
   initWebServer();
 
   initializeWiFi();
+  // First wall-clock-stamped log line — NTP has been attempted by now, so
+  // this entry is normally timestamped with real local time (unlike the
+  // earlier [BOOT] line above, which uses boot-relative HH:MM:SS.sss).
+  printInfo("[BOOT] up, reset=%d (%s), IP=%s, RSSI=%d",
+            (int)g_reset_reason, g_reset_reason_str,
+            WiFi.localIP().toString().c_str(), (int)WiFi.RSSI());
   // Provide reset info and register HTTP routes
   webserver_set_reset_info((int)g_reset_reason, g_reset_reason_str);
   webserver_setup_routes();
@@ -354,7 +358,7 @@ void loop() {
 
   // Log if handleClient takes unusually long (indicates blocking)
   uint32_t hdlDur = t1 - t0;
-  if (hdlDur > 100) {
+  if (hdlDur > 300) {
     printWarning("server.handleClient() took %ums", hdlDur);
   }
 

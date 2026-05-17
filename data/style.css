@@ -14,3 +14,6 @@ input[type="range"].modified{accent-color:#ef4444;box-shadow:0 0 0 6px rgba(239,
 input[type="range"].modified:focus{box-shadow:0 0 0 8px rgba(239,68,68,0.12);}
 pre{background:#111827;color:#e5e7eb;padding:10px;border-radius:12px;overflow:auto;margin:8px 0 0;}
 .muted{opacity:.65;font-size:12px;}
+.card.stale .v{color:#9ca3af;}
+.v.multiline{white-space:pre-line;}
+.stale-suffix{color:#6b7280;font-size:14px;font-weight:400;margin-left:8px;}

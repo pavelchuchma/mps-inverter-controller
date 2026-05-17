@@ -5,7 +5,9 @@
 #include <ArduinoJson.h>
 #include "inverter_comm.h"
 #include "config.h"
+#include "phone.h"
 #include "relay.h"
+#include <math.h>
 
 // `server` is defined in main.cpp; declare it here for use in this TU.
 extern WebServer server;
@@ -99,6 +101,26 @@ static String makeStatusJson() {
   doc["boiler_fault"] = isBoilerFault();
   doc["boiler_fault_reason"] = getBoilerFaultReason() ? getBoilerFaultReason() : "";
 
+  // Phone snapshot. stale_secs reported by the phone is added to the on-ESP
+  // snapshot age so the UI sees the true age of the underlying measurement,
+  // not just how long ago we received the (already-stale) data.
+  PhoneState ph = {};
+  bool phoneValid = phone_get_status(&ph);
+  doc["phone_valid"] = phoneValid;
+  if (phoneValid) {
+    float snapshot_age_secs = (float)(millis() - ph.ts_ms) / 1000.0f;
+    float batt_stale = isnan(ph.battery_stale_secs) ? 0.0f : ph.battery_stale_secs;
+    float net_stale  = isnan(ph.network_stale_secs) ? 0.0f : ph.network_stale_secs;
+    doc["phone_battery_percentage"] = ph.battery_percentage;
+    doc["phone_battery_status"]     = ph.battery_status;
+    doc["phone_battery_stale_secs"] = batt_stale + snapshot_age_secs;
+    doc["phone_wlan_rx_bytes"]      = ph.net_wlan0_rx_bytes;
+    doc["phone_wlan_tx_bytes"]      = ph.net_wlan0_tx_bytes;
+    doc["phone_rmnet_rx_bytes"]     = ph.net_rmnet0_rx_bytes;
+    doc["phone_rmnet_tx_bytes"]     = ph.net_rmnet0_tx_bytes;
+    doc["phone_network_stale_secs"] = net_stale + snapshot_age_secs;
+  }
+
   // System diagnostics
   doc["reset_reason"] = (int)g_reset_reason_ws;
   doc["reset_reason_str"] = g_reset_reason_str_ws;
@@ -156,6 +178,17 @@ static String handleCommand(JsonDocument& doc) {
     char msg[32];
     snprintf(msg, sizeof(msg), "Boiler %s", labels[val]);
     return makeAckJson(msg);
+  }
+
+  if (strcmp(name, "clear_log") == 0) {
+    File f = LittleFS.open("/app.log", "w");
+    if (!f) {
+      Serial.println("[CMD] clear_log: open failed");
+      return makeErrJson("io_error", "Failed to open /app.log");
+    }
+    f.close();
+    Serial.println("[CMD] clear_log: /app.log truncated");
+    return makeAckJson("Log cleared");
   }
 
   return makeErrJson("unknown_cmd", "Unknown command name");

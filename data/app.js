@@ -10,6 +10,46 @@ function setConn(ok, msg) {
   el.className = "pill " + (ok ? "ok" : "err");
 }
 
+// Format byte counts (e.g. from /proc/net/dev) using base-1024 units.
+function formatBytes(b) {
+  if (b == null || isNaN(b)) return "—";
+  const n = Number(b);
+  const KB = 1024, MB = 1024 * 1024, GB = 1024 * 1024 * 1024;
+  if (n < KB) return `${n} B`;
+  if (n < MB) return `${Math.round(n / KB)} KB`;
+  if (n < GB) return `${Math.round(n / MB)} MB`;
+  return `${(n / GB).toFixed(2)} GB`;
+}
+
+// Format seconds into "Ns" / "NmNs" / "NhNmNs" for stale-suffix display.
+function formatStaleSecs(s) {
+  const total = Math.max(0, Math.round(Number(s) || 0));
+  if (total < 60) return `${total}s`;
+  if (total < 3600) {
+    const m = Math.floor(total / 60);
+    const ss = total % 60;
+    return `${m}m${String(ss).padStart(2, '0')}s`;
+  }
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  return `${h}h${String(m).padStart(2, '0')}m`;
+}
+
+// Apply a value + optional "stale: Xs" suffix to one of the phone tiles.
+// When stale, also flag the card so its value text fades to gray.
+function applyPhoneTile(cardId, valueId, suffixId, text, staleSecs, threshold) {
+  const card = $(cardId);
+  $(valueId).textContent = text;
+  if (text === "—") {
+    $(suffixId).textContent = "";
+    card.classList.add("stale");
+    return;
+  }
+  const isStale = Number(staleSecs) > threshold;
+  $(suffixId).textContent = isStale ? `stale: ${formatStaleSecs(staleSecs)}` : "";
+  card.classList.toggle("stale", isStale);
+}
+
 // Format milliseconds (e.g. from millis()) to HH:MM:SS
 function formatMsToHMS(ms) {
   const totalSec = Math.floor(Number(ms || 0) / 1000);
@@ -32,6 +72,11 @@ async function toggleCharger() {
   const newState = !chargerOn;
   await send({ type: "cmd", name: "set_charger", value: newState });
   await fetchStatus();
+}
+
+async function clearLog() {
+  if (!confirm("Clear /app.log on ESP?")) return;
+  await send({ type: "cmd", name: "clear_log" });
 }
 
 async function setBoiler(level) {
@@ -96,6 +141,29 @@ async function fetchStatus() {
       $("pv_charging_power").textContent = valid && j.pv_charging_power !== undefined && j.pv_charging_power !== null ? String(Math.round(j.pv_charging_power)) : "—";
       $("g_inverter_mode_code").textContent = j.g_inverter_mode_code !== undefined && j.g_inverter_mode_code !== null ? j.g_inverter_mode_code : "—";
       $("g_inverter_mode_name").textContent = j.g_inverter_mode_name !== undefined && j.g_inverter_mode_name !== null ? j.g_inverter_mode_name : "—";
+
+      // Phone tiles: battery, WiFi traffic, mobile-data traffic.
+      const phoneValid = !!j.phone_valid;
+      if (!phoneValid) {
+        applyPhoneTile("phone_battery_card", "phone_battery_v", "phone_battery_stale", "—", 0, 0);
+        applyPhoneTile("phone_wifi_card",    "phone_wifi_v",    "phone_wifi_stale",    "—", 0, 0);
+        applyPhoneTile("phone_rmnet_card",   "phone_rmnet_v",   "phone_rmnet_stale",   "—", 0, 0);
+      } else {
+        const pct = j.phone_battery_percentage;
+        const statusRaw = (j.phone_battery_status || "").toString();
+        const status = statusRaw.toLowerCase().replace(/_/g, " ");
+        const battText = status ? `${pct}% (${status})` : `${pct}%`;
+        applyPhoneTile("phone_battery_card", "phone_battery_v", "phone_battery_stale",
+                       battText, j.phone_battery_stale_secs, 120);
+
+        const wifiText = `Read ${formatBytes(j.phone_wlan_rx_bytes)}\nWrite ${formatBytes(j.phone_wlan_tx_bytes)}`;
+        applyPhoneTile("phone_wifi_card", "phone_wifi_v", "phone_wifi_stale",
+                       wifiText, j.phone_network_stale_secs, 120);
+
+        const rmnetText = `Read ${formatBytes(j.phone_rmnet_rx_bytes)}\nWrite ${formatBytes(j.phone_rmnet_tx_bytes)}`;
+        applyPhoneTile("phone_rmnet_card", "phone_rmnet_v", "phone_rmnet_stale",
+                       rmnetText, j.phone_network_stale_secs, 120);
+      }
 
       if (j.charger_on !== undefined) {
         chargerOn = !!j.charger_on;

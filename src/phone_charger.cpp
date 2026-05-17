@@ -7,8 +7,13 @@
 void tickPhoneCharger() {
   PhoneState s;
   bool valid = phone_get_status(&s);
+  // Age of the LAST KNOWN snapshot, not "was the latest poll successful".
+  // A single failed poll must not trip the stale fallback — only sustained
+  // absence of fresh data past PHONE_STATUS_STALE_MS does. s.ts_ms == 0
+  // means we never had data, in which case age_ms == millis(), which trips
+  // the threshold after ~5 min of uptime — safe default at boot.
   uint32_t age_ms = millis() - s.ts_ms;
-  bool stale = !valid || age_ms > PHONE_STATUS_STALE_MS;
+  bool stale = age_ms > PHONE_STATUS_STALE_MS;
 
   bool want_on;
   const char* reason;
