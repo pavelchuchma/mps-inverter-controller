@@ -10,12 +10,13 @@
 #include "display.h"
 #include "inverter_comm.h"
 #include "phone.h"
+#include "phone_charger.h"
 #include "relay.h"
+#include "utils.h"
 #include <esp_system.h>
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include <stdarg.h>
 #include <LittleFS.h>
 #include <driver/adc.h>
 #include <math.h>
@@ -27,41 +28,6 @@ IPAddress netMsk(255, 255, 255, 0);
 static WireGuard wg;
 
 WebServer server(80);
-
-// Format boot-relative milliseconds to HH:MM:SS.sss into provided buffer.
-static inline void formatBootTimeMs(char* buf, size_t cap, uint32_t ms) {
-  uint32_t total_ms = ms;
-  uint32_t total_sec = total_ms / 1000;
-  unsigned h = total_sec / 3600;
-  unsigned m = (total_sec % 3600) / 60;
-  unsigned s = total_sec % 60;
-  unsigned ms_part = total_ms % 1000;
-  if (cap > 0) {
-    snprintf(buf, cap, "%02u:%02u:%02u.%03u", h, m, s, ms_part);
-  }
-}
-
-// Print a WARN log with boot-relative timestamp. Accepts printf-style args.
-static inline void printWarning(const char* fmt, ...) {
-  char tbuf[16];
-  formatBootTimeMs(tbuf, sizeof(tbuf), millis());
-  char msg[384];
-  va_list ap;
-  va_start(ap, fmt);
-  vsnprintf(msg, sizeof(msg), fmt, ap);
-  va_end(ap);
-  char out[420];
-  snprintf(out, sizeof(out), "[%s] [WARN] %s\n", tbuf, msg);
-  Serial.print(out);
-  // Append warning into LittleFS logfile
-  if (LittleFS.begin()) {
-    File f = LittleFS.open("/app.log", "a");
-    if (f) {
-      f.print(out);
-      f.close();
-    }
-  }
-}
 
 // --------- App state ----------
 // ---- Reset reason (persisted from setup) ----
@@ -377,6 +343,7 @@ static Task tasks[] = {
   { 1000u,     0u, &task_update_temperature },
   { 1000u,     0u, &task_update_boiler },
   { 1000u,     0u, &checkDisplayBacklightTimeout },
+  { 10000u,    0u, &tickPhoneCharger },
 };
 
 void loop() {
