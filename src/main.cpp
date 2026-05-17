@@ -9,6 +9,7 @@
 #include "esp_webserver.h"
 #include "display.h"
 #include "inverter_comm.h"
+#include "phone.h"
 #include "relay.h"
 #include <esp_system.h>
 #include <esp_heap_caps.h>
@@ -112,6 +113,9 @@ void connectToWiFi() {
       ESP.restart();
     }
   }
+  // Disable WiFi modem sleep — RSSI is marginal (-85..-90 dBm), continuous
+  // listening keeps the link more robust at the cost of ~30 mA extra draw.
+  WiFi.setSleep(false);
   lcd_printf_line(1, "Pripojeno");
 }
 
@@ -231,6 +235,9 @@ void setup() {
 
   // Initialize inverter RS232 communication (background task)
    inverter_comm_init(INVERTER_RX_PIN, INVERTER_TX_PIN);
+
+  // Start polling phone status endpoint (background task, 30s interval)
+  phone_comm_init();
 }
 
 
