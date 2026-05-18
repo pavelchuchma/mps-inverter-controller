@@ -13,8 +13,10 @@ PhoneState g_phone_status = {};
 bool       g_phone_data_valid = false;
 
 const char* getPhoneIP() {
-  // TODO: replace with dynamic discovery (mDNS / DHCP lease scan / config).
-  return "192.168.68.10";
+  static char ip_str[16] = {0};
+  IPAddress gw = WiFi.gatewayIP();
+  snprintf(ip_str, sizeof(ip_str), "%u.%u.%u.%u", gw[0], gw[1], gw[2], gw[3]);
+  return ip_str;
 }
 
 static void copy_str(char* dst, size_t cap, const char* src) {
