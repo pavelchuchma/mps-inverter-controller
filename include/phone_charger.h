@@ -4,8 +4,8 @@
 // Hysteresis thresholds for the phone-battery regulator (percent).
 // Charging is enabled when SoC falls to LOW and disabled when it reaches
 // HIGH; in between, the current relay state is kept (avoids relay chatter).
-#define PHONE_BATT_LOW   25
-#define PHONE_BATT_HIGH  80
+#define PHONE_BATT_LOW   40
+#define PHONE_BATT_HIGH  60
 
 // If the latest successful phone status snapshot is older than this, the
 // regulator forces the charger ON as a safe default. 5 minutes covers

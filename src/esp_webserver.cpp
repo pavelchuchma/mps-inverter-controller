@@ -113,9 +113,8 @@ static String makeStatusJson() {
     float net_stale  = isnan(ph.network_stale_secs) ? 0.0f : ph.network_stale_secs;
     doc["phone_battery_percentage"] = ph.battery_percentage;
     doc["phone_battery_status"]     = ph.battery_status;
+    doc["phone_battery_current_ma"] = ph.battery_current_ua / 1000;
     doc["phone_battery_stale_secs"] = batt_stale + snapshot_age_secs;
-    doc["phone_wlan_rx_bytes"]      = ph.net_wlan0_rx_bytes;
-    doc["phone_wlan_tx_bytes"]      = ph.net_wlan0_tx_bytes;
     doc["phone_rmnet_rx_bytes"]     = ph.net_rmnet0_rx_bytes;
     doc["phone_rmnet_tx_bytes"]     = ph.net_rmnet0_tx_bytes;
     doc["phone_network_stale_secs"] = net_stale + snapshot_age_secs;

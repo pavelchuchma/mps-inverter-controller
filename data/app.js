@@ -142,23 +142,23 @@ async function fetchStatus() {
       $("g_inverter_mode_code").textContent = j.g_inverter_mode_code !== undefined && j.g_inverter_mode_code !== null ? j.g_inverter_mode_code : "—";
       $("g_inverter_mode_name").textContent = j.g_inverter_mode_name !== undefined && j.g_inverter_mode_name !== null ? j.g_inverter_mode_name : "—";
 
-      // Phone tiles: battery, WiFi traffic, mobile-data traffic.
+      // Phone tiles: battery, mobile-data traffic.
       const phoneValid = !!j.phone_valid;
       if (!phoneValid) {
         applyPhoneTile("phone_battery_card", "phone_battery_v", "phone_battery_stale", "—", 0, 0);
-        applyPhoneTile("phone_wifi_card",    "phone_wifi_v",    "phone_wifi_stale",    "—", 0, 0);
         applyPhoneTile("phone_rmnet_card",   "phone_rmnet_v",   "phone_rmnet_stale",   "—", 0, 0);
       } else {
         const pct = j.phone_battery_percentage;
         const statusRaw = (j.phone_battery_status || "").toString();
         const status = statusRaw.toLowerCase().replace(/_/g, " ");
-        const battText = status ? `${pct}% (${status})` : `${pct}%`;
+        let battText = status ? `${pct}% (${status})` : `${pct}%`;
+        if (j.phone_battery_current_ma !== undefined && j.phone_battery_current_ma !== null) {
+          const ma = Number(j.phone_battery_current_ma);
+          const sign = ma > 0 ? "+" : "";
+          battText += `\n${sign}${ma.toFixed(0)} mA`;
+        }
         applyPhoneTile("phone_battery_card", "phone_battery_v", "phone_battery_stale",
                        battText, j.phone_battery_stale_secs, 120);
-
-        const wifiText = `Read ${formatBytes(j.phone_wlan_rx_bytes)}\nWrite ${formatBytes(j.phone_wlan_tx_bytes)}`;
-        applyPhoneTile("phone_wifi_card", "phone_wifi_v", "phone_wifi_stale",
-                       wifiText, j.phone_network_stale_secs, 120);
 
         const rmnetText = `Read ${formatBytes(j.phone_rmnet_rx_bytes)}\nWrite ${formatBytes(j.phone_rmnet_tx_bytes)}`;
         applyPhoneTile("phone_rmnet_card", "phone_rmnet_v", "phone_rmnet_stale",
