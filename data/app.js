@@ -63,16 +63,9 @@ function formatMsToHMS(ms) {
 }
 
 let resetReasonLogged = false;
-let chargerOn = false;
 let boilerPower = 0;
 let boilerFault = false;
 const boilerLabels = ["OFF", "500W", "1000W", "2000W"];
-
-async function toggleCharger() {
-  const newState = !chargerOn;
-  await send({ type: "cmd", name: "set_charger", value: newState });
-  await fetchStatus();
-}
 
 async function clearLog() {
   if (!confirm("Clear /app.log on ESP?")) return;
@@ -160,16 +153,18 @@ async function fetchStatus() {
         applyPhoneTile("phone_battery_card", "phone_battery_v", "phone_battery_stale",
                        battText, j.phone_battery_stale_secs, 120);
 
-        const rmnetText = `Read ${formatBytes(j.phone_rmnet_rx_bytes)}\nWrite ${formatBytes(j.phone_rmnet_tx_bytes)}`;
+        const rx = Number(j.phone_rmnet_rx_bytes) || 0;
+        const tx = Number(j.phone_rmnet_tx_bytes) || 0;
+        const totalMb = Math.round((rx + tx) / (1024 * 1024));
+        const rmnetText = `${totalMb.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} MB`;
         applyPhoneTile("phone_rmnet_card", "phone_rmnet_v", "phone_rmnet_stale",
                        rmnetText, j.phone_network_stale_secs, 120);
       }
 
       if (j.charger_on !== undefined) {
-        chargerOn = !!j.charger_on;
-        $("charger_status").textContent = chargerOn ? "ON" : "OFF";
-        $("charger_status").style.color = chargerOn ? "#22c55e" : "#ef4444";
-        $("charger_btn").textContent = chargerOn ? "Turn OFF" : "Turn ON";
+        const on = !!j.charger_on;
+        $("charger_status").textContent = on ? "ON" : "OFF";
+        $("charger_status").style.color = on ? "#22c55e" : "#ef4444";
       }
 
       if (j.boiler_on !== undefined) {

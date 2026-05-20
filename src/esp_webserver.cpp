@@ -159,13 +159,6 @@ static String handleCommand(JsonDocument& doc) {
     return makeErrJson("bad_request", "Missing 'name'");
   }
 
-  if (strcmp(name, "set_charger") == 0) {
-    bool on = doc["value"].as<bool>();
-    setMobileCharger(on);
-    Serial.printf("[CMD] set_charger: %s\n", on ? "ON" : "OFF");
-    return makeAckJson(on ? "Charger ON" : "Charger OFF");
-  }
-
   if (strcmp(name, "set_boiler") == 0) {
     int val = doc["value"].as<int>();
     if (val < 0 || val > 3) {
