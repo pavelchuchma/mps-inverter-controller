@@ -34,8 +34,8 @@ static inline void formatLogTimestamp(char* buf, size_t cap) {
 // LOG_DROP_BYTES (rounded up to the next newline so the surviving log starts
 // on a clean line). With a typical ~2 KB/h rate this fires once every few
 // weeks. The copy uses a small stack buffer to avoid large heap allocations.
-static const size_t LOG_MAX_BYTES  = 800UL * 1024UL;
-static const size_t LOG_DROP_BYTES = 400UL * 1024UL;
+static const size_t LOG_MAX_BYTES  = 100UL * 1024UL;
+static const size_t LOG_DROP_BYTES = 50UL * 1024UL;
 
 static void rotateAppLog() {
   File src = LittleFS.open("/app.log", "r");

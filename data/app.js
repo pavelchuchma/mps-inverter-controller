@@ -113,109 +113,105 @@ async function fetchStatus() {
     const j = await resp.json();
     setConn(true, "HTTP OK");
 
-    if (j.type === "status") {
-      const valid = !!j.valid;
+    // /status response uses short keys to minimize GSM payload; see makeStatusJson() in esp_webserver.cpp for the mapping.
+    const valid = !!j.iv;
 
-      $("tempH").textContent = (j.temp_h !== undefined && j.temp_h !== null) ? Number(j.temp_h).toFixed(1) : "—";
-      $("tempL").textContent = (j.temp_l !== undefined && j.temp_l !== null) ? Number(j.temp_l).toFixed(1) : "—";
-      $("ac_out_voltage").textContent = valid && j.ac_out_voltage !== undefined && j.ac_out_voltage !== null ? Number(j.ac_out_voltage).toFixed(1) : "—";
-      $("ac_out_frequency").textContent = valid && j.ac_out_frequency !== undefined && j.ac_out_frequency !== null ? Number(j.ac_out_frequency).toFixed(2) : "—";
-      $("ac_apparent_va").textContent = valid && j.ac_apparent_va !== undefined && j.ac_apparent_va !== null ? String(Math.round(j.ac_apparent_va)) : "—";
-      $("ac_active_w").textContent = valid && j.ac_active_w !== undefined && j.ac_active_w !== null ? String(Math.round(j.ac_active_w)) : "—";
-      $("load_percent").textContent = valid && j.load_percent !== undefined && j.load_percent !== null ? String(Math.round(j.load_percent)) : "—";
-      $("batt_voltage").textContent = valid && j.batt_voltage !== undefined && j.batt_voltage !== null ? Number(j.batt_voltage).toFixed(2) : "—";
-      $("batt_charge_current").textContent = valid && j.batt_charge_current !== undefined && j.batt_charge_current !== null ? Number(j.batt_charge_current).toFixed(2) : "—";
-      $("batt_soc").textContent = valid && j.batt_soc !== undefined && j.batt_soc !== null ? Number(j.batt_soc).toFixed(1) : "—";
-      $("heatsink_temp").textContent = valid && j.heatsink_temp !== undefined && j.heatsink_temp !== null ? Number(j.heatsink_temp).toFixed(1) : "—";
-      $("pv_input_current").textContent = valid && j.pv_input_current !== undefined && j.pv_input_current !== null ? Number(j.pv_input_current).toFixed(2) : "—";
-      $("pv_input_voltage").textContent = valid && j.pv_input_voltage !== undefined && j.pv_input_voltage !== null ? Number(j.pv_input_voltage).toFixed(2) : "—";
-      $("batt_voltage_from_scc").textContent = valid && j.batt_voltage_from_scc !== undefined && j.batt_voltage_from_scc !== null ? Number(j.batt_voltage_from_scc).toFixed(2) : "—";
-      $("batt_discharge_current").textContent = valid && j.batt_discharge_current !== undefined && j.batt_discharge_current !== null ? Number(j.batt_discharge_current).toFixed(2) : "—";
-      $("pv_charging_power").textContent = valid && j.pv_charging_power !== undefined && j.pv_charging_power !== null ? String(Math.round(j.pv_charging_power)) : "—";
-      $("g_inverter_mode_code").textContent = j.g_inverter_mode_code !== undefined && j.g_inverter_mode_code !== null ? j.g_inverter_mode_code : "—";
-      $("g_inverter_mode_name").textContent = j.g_inverter_mode_name !== undefined && j.g_inverter_mode_name !== null ? j.g_inverter_mode_name : "—";
+    $("tempH").textContent = (j.th !== undefined && j.th !== null) ? Number(j.th).toFixed(1) : "—";
+    $("tempL").textContent = (j.tl !== undefined && j.tl !== null) ? Number(j.tl).toFixed(1) : "—";
+    $("ac_out_voltage").textContent = valid && j.av !== undefined && j.av !== null ? Number(j.av).toFixed(1) : "—";
+    $("ac_out_frequency").textContent = valid && j.af !== undefined && j.af !== null ? Number(j.af).toFixed(2) : "—";
+    $("ac_apparent_va").textContent = valid && j.aa !== undefined && j.aa !== null ? String(Math.round(j.aa)) : "—";
+    $("ac_active_w").textContent = valid && j.aw !== undefined && j.aw !== null ? String(Math.round(j.aw)) : "—";
+    $("load_percent").textContent = valid && j.lp !== undefined && j.lp !== null ? String(Math.round(j.lp)) : "—";
+    $("batt_voltage").textContent = valid && j.bv !== undefined && j.bv !== null ? Number(j.bv).toFixed(2) : "—";
+    $("batt_charge_current").textContent = valid && j.bcc !== undefined && j.bcc !== null ? Number(j.bcc).toFixed(2) : "—";
+    $("batt_soc").textContent = valid && j.bs !== undefined && j.bs !== null ? Number(j.bs).toFixed(1) : "—";
+    $("heatsink_temp").textContent = valid && j.ht !== undefined && j.ht !== null ? Number(j.ht).toFixed(1) : "—";
+    $("pv_input_current").textContent = valid && j.pi !== undefined && j.pi !== null ? Number(j.pi).toFixed(2) : "—";
+    $("pv_input_voltage").textContent = valid && j.piv !== undefined && j.piv !== null ? Number(j.piv).toFixed(2) : "—";
+    $("batt_voltage_from_scc").textContent = valid && j.bvs !== undefined && j.bvs !== null ? Number(j.bvs).toFixed(2) : "—";
+    $("batt_discharge_current").textContent = valid && j.bdc !== undefined && j.bdc !== null ? Number(j.bdc).toFixed(2) : "—";
+    $("pv_charging_power").textContent = valid && j.pcp !== undefined && j.pcp !== null ? String(Math.round(j.pcp)) : "—";
+    $("g_inverter_mode_code").textContent = j.mc !== undefined && j.mc !== null ? j.mc : "—";
+    $("g_inverter_mode_name").textContent = j.mn !== undefined && j.mn !== null ? j.mn : "—";
 
-      // Phone tiles: battery, mobile-data traffic.
-      const phoneValid = !!j.phone_valid;
-      if (!phoneValid) {
-        applyPhoneTile("phone_battery_card", "phone_battery_v", "phone_battery_stale", "—", 0, 0);
-        applyPhoneTile("phone_rmnet_card",   "phone_rmnet_v",   "phone_rmnet_stale",   "—", 0, 0);
-      } else {
-        const pct = j.phone_battery_percentage;
-        const statusRaw = (j.phone_battery_status || "").toString();
-        const status = statusRaw.toLowerCase().replace(/_/g, " ");
-        let battText = status ? `${pct}% (${status})` : `${pct}%`;
-        if (j.phone_battery_current_ma !== undefined && j.phone_battery_current_ma !== null) {
-          const ma = Number(j.phone_battery_current_ma);
-          const sign = ma > 0 ? "+" : "";
-          battText += `\n${sign}${ma.toFixed(0)} mA`;
-        }
-        applyPhoneTile("phone_battery_card", "phone_battery_v", "phone_battery_stale",
-                       battText, j.phone_battery_stale_secs, 120);
-
-        const rx = Number(j.phone_rmnet_rx_bytes) || 0;
-        const tx = Number(j.phone_rmnet_tx_bytes) || 0;
-        const totalMb = Math.round((rx + tx) / (1024 * 1024));
-        const rmnetText = `${totalMb.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} MB`;
-        applyPhoneTile("phone_rmnet_card", "phone_rmnet_v", "phone_rmnet_stale",
-                       rmnetText, j.phone_network_stale_secs, 120);
+    // Phone tiles: battery, mobile-data traffic.
+    const phoneValid = !!j.phv;
+    if (!phoneValid) {
+      applyPhoneTile("phone_battery_card", "phone_battery_v", "phone_battery_stale", "—", 0, 0);
+      applyPhoneTile("phone_rmnet_card",   "phone_rmnet_v",   "phone_rmnet_stale",   "—", 0, 0);
+    } else {
+      const pct = j.phbp;
+      const statusRaw = (j.phbs || "").toString();
+      const status = statusRaw.toLowerCase().replace(/_/g, " ");
+      let battText = status ? `${pct}% (${status})` : `${pct}%`;
+      if (j.phbc !== undefined && j.phbc !== null) {
+        const ma = Number(j.phbc);
+        const sign = ma > 0 ? "+" : "";
+        battText += `\n${sign}${ma.toFixed(0)} mA`;
       }
+      applyPhoneTile("phone_battery_card", "phone_battery_v", "phone_battery_stale",
+                     battText, j.phbss, 120);
 
-      if (j.charger_on !== undefined) {
-        const on = !!j.charger_on;
-        $("charger_status").textContent = on ? "ON" : "OFF";
-        $("charger_status").style.color = on ? "#22c55e" : "#ef4444";
-      }
-
-      if (j.boiler_on !== undefined) {
-        const on = !!j.boiler_on;
-        $("boiler_on").textContent = on ? "ON" : "OFF";
-        $("boiler_on").style.color = on ? "#22c55e" : "#ef4444";
-      }
-
-      const newFault = !!j.boiler_fault;
-      if (newFault && !boilerFault) {
-        const reason = j.boiler_fault_reason || "(unspecified)";
-        logln("BOILER FAULT: " + reason);
-      }
-      boilerFault = newFault;
-
-      if (j.boiler_power !== undefined) {
-        boilerPower = j.boiler_power;
-        const statusEl = $("boiler_status");
-        if (boilerFault) {
-          statusEl.textContent = "ERROR";
-          statusEl.style.color = "#ffffff";
-          statusEl.style.background = "#ef4444";
-          statusEl.style.fontWeight = "700";
-          statusEl.style.padding = "0 6px";
-        } else {
-          statusEl.textContent = boilerLabels[boilerPower] || "—";
-          statusEl.style.color = boilerPower > 0 ? "#ef4444" : "";
-          statusEl.style.background = "";
-          statusEl.style.fontWeight = "";
-          statusEl.style.padding = "";
-        }
-        document.querySelectorAll(".boiler-btn").forEach((btn, i) => {
-          btn.disabled = boilerFault;
-          btn.style.opacity = boilerFault ? "0.4" : "";
-          btn.style.cursor = boilerFault ? "not-allowed" : "";
-          btn.style.background = (!boilerFault && i === boilerPower) ? "#dbeafe" : "";
-          btn.style.fontWeight = (!boilerFault && i === boilerPower) ? "700" : "";
-        });
-      }
-
-      if (!resetReasonLogged && (j.reset_reason !== undefined || j.reset_reason_str !== undefined)) {
-        const rr = (j.reset_reason_str || "").toString();
-        const rrn = (j.reset_reason !== undefined) ? String(j.reset_reason) : "";
-        const msg = rr || rrn ? `ESP reset reason: ${rr}${rr && rrn ? ` (${rrn})` : rrn ? rrn : ""}` : "ESP reset reason: (unknown)";
-        logln(msg);
-        resetReasonLogged = true;
-      }
-
-      return;
+      const rx = Number(j.phrx) || 0;
+      const tx = Number(j.phtx) || 0;
+      const totalMb = Math.round((rx + tx) / (1024 * 1024));
+      const rmnetText = `${totalMb.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} MB`;
+      applyPhoneTile("phone_rmnet_card", "phone_rmnet_v", "phone_rmnet_stale",
+                     rmnetText, j.phns, 120);
     }
-    logln("MSG: " + JSON.stringify(j));
+
+    if (j.co !== undefined) {
+      const on = !!j.co;
+      $("charger_status").textContent = on ? "ON" : "OFF";
+      $("charger_status").style.color = on ? "#22c55e" : "#ef4444";
+    }
+
+    if (j.bo !== undefined) {
+      const on = !!j.bo;
+      $("boiler_on").textContent = on ? "ON" : "OFF";
+      $("boiler_on").style.color = on ? "#22c55e" : "#ef4444";
+    }
+
+    const newFault = !!j.bf;
+    if (newFault && !boilerFault) {
+      const reason = j.bfr || "(unspecified)";
+      logln("BOILER FAULT: " + reason);
+    }
+    boilerFault = newFault;
+
+    if (j.bp !== undefined) {
+      boilerPower = j.bp;
+      const statusEl = $("boiler_status");
+      if (boilerFault) {
+        statusEl.textContent = "ERROR";
+        statusEl.style.color = "#ffffff";
+        statusEl.style.background = "#ef4444";
+        statusEl.style.fontWeight = "700";
+        statusEl.style.padding = "0 6px";
+      } else {
+        statusEl.textContent = boilerLabels[boilerPower] || "—";
+        statusEl.style.color = boilerPower > 0 ? "#ef4444" : "";
+        statusEl.style.background = "";
+        statusEl.style.fontWeight = "";
+        statusEl.style.padding = "";
+      }
+      document.querySelectorAll(".boiler-btn").forEach((btn, i) => {
+        btn.disabled = boilerFault;
+        btn.style.opacity = boilerFault ? "0.4" : "";
+        btn.style.cursor = boilerFault ? "not-allowed" : "";
+        btn.style.background = (!boilerFault && i === boilerPower) ? "#dbeafe" : "";
+        btn.style.fontWeight = (!boilerFault && i === boilerPower) ? "700" : "";
+      });
+    }
+
+    if (!resetReasonLogged && (j.rr !== undefined || j.rrs !== undefined)) {
+      const rr = (j.rrs || "").toString();
+      const rrn = (j.rr !== undefined) ? String(j.rr) : "";
+      const msg = rr || rrn ? `ESP reset reason: ${rr}${rr && rrn ? ` (${rrn})` : rrn ? rrn : ""}` : "ESP reset reason: (unknown)";
+      logln(msg);
+      resetReasonLogged = true;
+    }
   } catch (e) {
     if (e && (e.name === 'AbortError' || e.code === 20)) {
       setConn(false, "Timeout 1s");

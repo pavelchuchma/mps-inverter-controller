@@ -63,66 +63,62 @@ void webserver_set_reset_info(int reason, const char* reason_str) {
 }
 
 // --------- JSON helpers (moved from main.cpp) ----------
+// Short JSON keys to minimize GSM payload (~50% smaller); data/app.js reads matching short names.
 static String makeStatusJson() {
   JsonDocument doc;
-  doc["type"] = "status";
   InverterState s = {};
   inverter_get_status(&s);
-  // Also obtain current mode (thread-safe accessor)
   char mode_code = '\0';
   char mode_name[32] = "";
   inverter_get_mode(&mode_code, mode_name, sizeof(mode_name));
-  // Insert attributes in the order requested by the UI
-  doc["ac_out_voltage"] = s.ac_out_voltage;
-  doc["ac_out_frequency"] = s.ac_out_frequency;
-  doc["ac_apparent_va"] = s.ac_apparent_va;
-  doc["ac_active_w"] = s.ac_active_w;
-  doc["load_percent"] = s.load_percent;
-  doc["batt_voltage"] = s.batt_voltage;
-  doc["batt_charge_current"] = s.batt_charge_current;
-  doc["batt_soc"] = s.batt_soc;
-  doc["heatsink_temp"] = s.heatsink_temp;
-  doc["pv_input_current"] = s.pv_input_current;
-  doc["pv_input_voltage"] = s.pv_input_voltage;
-  doc["batt_voltage_from_scc"] = s.batt_voltage_from_scc;
-  doc["batt_discharge_current"] = s.batt_discharge_current;
-  doc["pv_charging_power"] = s.pv_charging_power;
-  doc["g_inverter_mode_code"] = String(mode_code);
-  doc["g_inverter_mode_name"] = mode_name;
-  // Map InverterState to UI schema
-  doc["valid"] = g_inverter_data_valid;
-  doc["ts_ms"] = s.ts_ms;
-  doc["temp_h"] = isnan(g_temp_h) ? JsonVariant() : g_temp_h;
-  doc["temp_l"] = isnan(g_temp_l) ? JsonVariant() : g_temp_l;
+  doc["av"]  = s.ac_out_voltage;
+  doc["af"]  = s.ac_out_frequency;
+  doc["aa"]  = s.ac_apparent_va;
+  doc["aw"]  = s.ac_active_w;
+  doc["lp"]  = s.load_percent;
+  doc["bv"]  = s.batt_voltage;
+  doc["bcc"] = s.batt_charge_current;
+  doc["bs"]  = s.batt_soc;
+  doc["ht"]  = s.heatsink_temp;
+  doc["pi"]  = s.pv_input_current;
+  doc["piv"] = s.pv_input_voltage;
+  doc["bvs"] = s.batt_voltage_from_scc;
+  doc["bdc"] = s.batt_discharge_current;
+  doc["pcp"] = s.pv_charging_power;
+  doc["mc"]  = String(mode_code);
+  doc["mn"]  = mode_name;
+  doc["iv"]  = g_inverter_data_valid;
+  doc["ts"]  = s.ts_ms;
+  doc["th"]  = isnan(g_temp_h) ? JsonVariant() : g_temp_h;
+  doc["tl"]  = isnan(g_temp_l) ? JsonVariant() : g_temp_l;
 
-  doc["charger_on"] = isMobileChargerOn();
-  doc["boiler_power"] = (int)getBoilerPower();
-  doc["boiler_on"] = isBoilerOn();
-  doc["boiler_fault"] = isBoilerFault();
-  doc["boiler_fault_reason"] = getBoilerFaultReason() ? getBoilerFaultReason() : "";
+  doc["co"]  = isMobileChargerOn();
+  doc["bp"]  = (int)getBoilerPower();
+  doc["bo"]  = isBoilerOn();
+  doc["bf"]  = isBoilerFault();
+  doc["bfr"] = getBoilerFaultReason() ? getBoilerFaultReason() : "";
 
   // Phone snapshot. stale_secs reported by the phone is added to the on-ESP
   // snapshot age so the UI sees the true age of the underlying measurement,
   // not just how long ago we received the (already-stale) data.
   PhoneState ph = {};
   bool phoneValid = phone_get_status(&ph);
-  doc["phone_valid"] = phoneValid;
+  doc["phv"] = phoneValid;
   if (phoneValid) {
     float snapshot_age_secs = (float)(millis() - ph.ts_ms) / 1000.0f;
     float batt_stale = isnan(ph.battery_stale_secs) ? 0.0f : ph.battery_stale_secs;
     float net_stale  = isnan(ph.network_stale_secs) ? 0.0f : ph.network_stale_secs;
-    doc["phone_battery_percentage"] = ph.battery_percentage;
-    doc["phone_battery_status"]     = ph.battery_status;
-    doc["phone_battery_current_ma"] = ph.battery_current_ua / 1000;
-    doc["phone_battery_stale_secs"] = batt_stale + snapshot_age_secs;
-    doc["phone_rmnet_rx_bytes"]     = ph.net_rmnet0_rx_bytes;
-    doc["phone_rmnet_tx_bytes"]     = ph.net_rmnet0_tx_bytes;
-    doc["phone_network_stale_secs"] = net_stale + snapshot_age_secs;
+    doc["phbp"]  = ph.battery_percentage;
+    doc["phbs"]  = ph.battery_status;
+    doc["phbc"]  = ph.battery_current_ua / 1000;
+    doc["phbss"] = batt_stale + snapshot_age_secs;
+    doc["phrx"]  = ph.net_rmnet0_rx_bytes;
+    doc["phtx"]  = ph.net_rmnet0_tx_bytes;
+    doc["phns"]  = net_stale + snapshot_age_secs;
   }
 
-  // System diagnostics
-  doc["reset_reason"] = (int)g_reset_reason_ws;
-  doc["reset_reason_str"] = g_reset_reason_str_ws;
+  doc["rr"]  = (int)g_reset_reason_ws;
+  doc["rrs"] = g_reset_reason_str_ws;
 
   String out;
   serializeJson(doc, out);
