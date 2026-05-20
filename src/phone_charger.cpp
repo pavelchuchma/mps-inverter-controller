@@ -45,12 +45,10 @@ void tickPhoneCharger() {
                  (int)valid,
                  (unsigned)(age_ms / 1000));
   } else {
-    printInfo("[CHARGER] %s -> %s (reason=%s, %d%% status=%s age=%us)",
-                 was_on ? "ON" : "OFF",
+    printInfo("[CHARGER] %s (reason=%s, %d%% age=%us)",
                  want_on ? "ON" : "OFF",
                  reason,
                  s.battery_percentage,
-                 s.battery_status,
                  (unsigned)(age_ms / 1000));
   }
 }
