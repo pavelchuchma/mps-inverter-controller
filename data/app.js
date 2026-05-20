@@ -67,6 +67,37 @@ let boilerPower = 0;
 let boilerFault = false;
 const boilerLabels = ["OFF", "500W", "1000W", "2000W"];
 
+// Temperature: integer display with hysteresis — a new value is committed only
+// after it holds steady for TEMP_STABLE_COUNT consecutive readings (suppresses ±1 °C jitter).
+const TEMP_STABLE_COUNT = 10;
+const tempState = {}; // { elId: { displayed, candidate, count } }
+
+function updateTemp(elId, raw) {
+  if (raw === undefined || raw === null) return;
+  const v = Math.round(Number(raw));
+  let st = tempState[elId];
+  if (!st) {
+    tempState[elId] = { displayed: v, candidate: v, count: 0 };
+    $(elId).textContent = String(v);
+    return;
+  }
+  if (v === st.displayed) {
+    st.candidate = v;
+    st.count = 0;
+    return;
+  }
+  if (v === st.candidate) {
+    if (++st.count >= TEMP_STABLE_COUNT) {
+      st.displayed = v;
+      st.count = 0;
+      $(elId).textContent = String(v);
+    }
+  } else {
+    st.candidate = v;
+    st.count = 1;
+  }
+}
+
 async function clearLog() {
   if (!confirm("Clear /app.log on ESP?")) return;
   await send({ type: "cmd", name: "clear_log" });
@@ -116,8 +147,8 @@ async function fetchStatus() {
     // /status response uses short keys to minimize GSM payload; see makeStatusJson() in esp_webserver.cpp for the mapping.
     const valid = !!j.iv;
 
-    $("tempH").textContent = (j.th !== undefined && j.th !== null) ? Number(j.th).toFixed(1) : "—";
-    $("tempL").textContent = (j.tl !== undefined && j.tl !== null) ? Number(j.tl).toFixed(1) : "—";
+    updateTemp("tempH", j.th);
+    updateTemp("tempL", j.tl);
     $("ac_out_voltage").textContent = valid && j.av !== undefined && j.av !== null ? Number(j.av).toFixed(1) : "—";
     $("ac_out_frequency").textContent = valid && j.af !== undefined && j.af !== null ? Number(j.af).toFixed(2) : "—";
     $("ac_apparent_va").textContent = valid && j.aa !== undefined && j.aa !== null ? String(Math.round(j.aa)) : "—";
