@@ -67,7 +67,7 @@ inline bool isRelayBoilerCOn() {
   return digitalRead(RELAY_BOILER_C) == HIGH;
 }
 
-// Reads the opto-isolated AC voltage detector across relay B's NO contact.
+// Reads the opto-isolated AC voltage detector across relay RelayB.NO contact.
 // HIGH = "cold" (Y at N via B.NO, B is physically energized).
 // LOW  = "hot"  (Y not at N — B failed to close to NO).
 inline bool isRelayBoilerBVerifiedOn() {
