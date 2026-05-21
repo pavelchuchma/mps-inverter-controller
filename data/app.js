@@ -103,6 +103,11 @@ async function clearLog() {
   await send({ type: "cmd", name: "clear_log" });
 }
 
+async function restartDevice() {
+  if (!confirm("Restart ESP?")) return;
+  await send({ type: "cmd", name: "restart" });
+}
+
 async function setBoiler(level) {
   await send({ type: "cmd", name: "set_boiler", value: level });
   await fetchStatus();

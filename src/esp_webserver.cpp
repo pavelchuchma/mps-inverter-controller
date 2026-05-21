@@ -7,10 +7,13 @@
 #include "config.h"
 #include "phone.h"
 #include "relay.h"
+#include "utils.h"
 #include <math.h>
 
 // `server` is defined in main.cpp; declare it here for use in this TU.
 extern WebServer server;
+
+static bool pendingRestart = false;
 
 void initWebServer() {
   if (!LittleFS.begin()) {
@@ -179,6 +182,13 @@ static String handleCommand(JsonDocument& doc) {
     return makeAckJson("Log cleared");
   }
 
+  if (strcmp(name, "restart") == 0) {
+    printInfo("Restart requested from web UI (%s)",
+              server.client().remoteIP().toString().c_str());
+    pendingRestart = true;
+    return makeAckJson("Restarting");
+  }
+
   return makeErrJson("unknown_cmd", "Unknown command name");
 }
 
@@ -206,6 +216,11 @@ static void handleCmdHttp() {
   }
   String reply = handleCommand(doc);
   server.send(200, "application/json", reply);
+  if (pendingRestart) {
+    server.client().flush();
+    delay(200);
+    ESP.restart();
+  }
 }
 
 // --------- Phone battery status endpoint ---------
