@@ -13,6 +13,14 @@ static constexpr uint8_t STATE_BITS[4] = {
 static constexpr uint16_t RELAY_SETTLE_MS = 30;  // spec ≥ 30 ms
 static constexpr uint16_t B_VERIFY_TIMEOUT_MS = 1000;  // opto + RC filter can be slow
 
+// The boiler must heat only from PV surplus, never from the battery (it is
+// small and would drain quickly). Any battery discharge above this current [A]
+// counts as "discharging".
+static constexpr float BOILER_MAX_BATT_DISCHARGE_A = 0.0f;
+// Discharge must persist this long before the boiler is forced off, so a brief
+// load spike does not trip it.
+static constexpr uint32_t BOILER_DISCHARGE_OFF_MS = 5000;
+
 // volatile: currentPower may be read from another FreeRTOS task
 // (inverter control). 1-byte enum reads are atomic on Xtensa.
 static volatile BoilerPower currentPower = BOILER_OFF;
@@ -25,6 +33,11 @@ static uint32_t lastStepMs = 0;
 // → L–N short through C's transition arc.
 static bool waitingForBVerify = false;
 static uint32_t bVerifyStartMs = 0;
+
+// Tracks how long the battery has been continuously discharging, so the boiler
+// is only cut after BOILER_DISCHARGE_OFF_MS of sustained discharge.
+static bool battDischarging = false;
+static uint32_t dischargeStartMs = 0;
 
 // Sticky fault state. Once set, only a reboot clears it.
 static volatile bool boilerFault = false;
@@ -83,11 +96,26 @@ void tickBoiler() {
 
   uint32_t now = millis();
 
-  if (!isBoilerOn() || !inverter_data_valid()) {
+  // Track sustained battery discharge. A brief spike must not cut the boiler,
+  // so we require BOILER_DISCHARGE_OFF_MS of continuous discharge.
+  bool discharging = inverter_data_valid() &&
+                     inverter_batt_discharge_current() > BOILER_MAX_BATT_DISCHARGE_A;
+  if (discharging && !battDischarging) {
+    battDischarging = true;
+    dischargeStartMs = now;
+  } else if (!discharging) {
+    battDischarging = false;
+  }
+  bool sustainedDischarge = battDischarging &&
+                            (now - dischargeStartMs >= BOILER_DISCHARGE_OFF_MS);
+
+  if (!isBoilerOn() || !inverter_data_valid() || sustainedDischarge) {
     // Mains absent at A.COM (no heating possible, no AC for the opto to
-    // detect), or inverter data is stale/lost (comms down for several
-    // consecutive polls). Cancel any in-flight B-verify wait and steer the
-    // chain back to OFF (falls through to the settle/step block).
+    // detect), inverter data stale/lost (comms down for several consecutive
+    // polls), or the battery has been discharging for too long (boiler must
+    // run on PV surplus only, never drain the battery). Cancel any in-flight
+    // B-verify wait and steer the chain back to OFF (falls through to the
+    // settle/step block).
     waitingForBVerify = false;
     targetPower = BOILER_OFF;
   } else if (waitingForBVerify) {

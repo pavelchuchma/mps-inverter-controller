@@ -53,4 +53,6 @@ void inverter_comm_init(int rx_pin, int tx_pin);
 bool inverter_get_status(InverterState* out);
 // Thread-safe read of the inverter data validity flag.
 bool inverter_data_valid();
+// Thread-safe read of the latest battery discharge current [A].
+float inverter_batt_discharge_current();
 bool inverter_get_mode(char* out_code, char* out_name, size_t name_cap);

@@ -354,6 +354,14 @@ bool inverter_data_valid() {
   return v;
 }
 
+float inverter_batt_discharge_current() {
+  float v;
+  if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
+  v = g_inverter_status.batt_discharge_current;
+  if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
+  return v;
+}
+
 bool inverter_get_mode(char* out_code, char* out_name, size_t name_cap) {
   if (out_code) {
     if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
