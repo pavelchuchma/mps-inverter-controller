@@ -1,5 +1,9 @@
 #include "relay.h"
 #include "inverter_comm.h"
+#include "utils.h"
+
+// Human-readable boiler power labels for logging.
+static const char* const POWER_LABELS[4] = { "OFF", "500W", "1000W", "2000W" };
 
 // State encoded as 3-bit bitmask CBA  (bit0=A, bit1=B, bit2=C).
 // Index = power rank along the safe chain.
@@ -66,12 +70,13 @@ static void emergencyShutdown(const char* reason) {
   delay(RELAY_SETTLE_MS);
   setRelayBoilerC(false);
 
+  BoilerPower prev = currentPower;
   currentPower = BOILER_OFF;
   targetPower  = BOILER_OFF;
   lastStepMs   = millis();
 
-  Serial.printf("[BOILER FAULT] emergency shutdown: %s\n",
-                reason ? reason : "(unspecified)");
+  printWarning("Boiler %s -> OFF (emergency: %s)", POWER_LABELS[prev],
+               reason ? reason : "unspecified");
 }
 
 void boilerRelayInit() {
@@ -86,9 +91,19 @@ void boilerRelayInit() {
   waitingForBVerify = false;
 }
 
+// Set the commanded power target, logging the change (with reason) to the app
+// log. The intermediate ramp states (currentPower) are an implementation
+// detail and are not logged. No-op when the target is unchanged.
+static void setBoilerTarget(BoilerPower target, const char* reason) {
+  if (target == targetPower) return;
+  printInfo("Boiler target %s -> %s (%s)", POWER_LABELS[targetPower],
+            POWER_LABELS[target], reason);
+  targetPower = target;
+}
+
 void setBoilerPower(BoilerPower target) {
   if (boilerFault) return;
-  targetPower = target;
+  setBoilerTarget(target, "Web UI");
 }
 
 void tickBoiler() {
@@ -109,15 +124,20 @@ void tickBoiler() {
   bool sustainedDischarge = battDischarging &&
                             (now - dischargeStartMs >= BOILER_DISCHARGE_OFF_MS);
 
-  if (!isBoilerOn() || !inverter_data_valid() || sustainedDischarge) {
-    // Mains absent at A.COM (no heating possible, no AC for the opto to
-    // detect), inverter data stale/lost (comms down for several consecutive
-    // polls), or the battery has been discharging for too long (boiler must
-    // run on PV surplus only, never drain the battery). Cancel any in-flight
-    // B-verify wait and steer the chain back to OFF (falls through to the
-    // settle/step block).
+  // Mains absent at A.COM (no heating possible, no AC for the opto to detect),
+  // inverter data stale/lost (comms down for several consecutive polls), or the
+  // battery has been discharging for too long (boiler must run on PV surplus
+  // only, never drain the battery) — force the chain back to OFF.
+  const char* forceOffReason = nullptr;
+  if (!isBoilerOn()) forceOffReason = "boiler input off";
+  else if (!inverter_data_valid()) forceOffReason = "inverter data invalid";
+  else if (sustainedDischarge) forceOffReason = "battery discharge";
+
+  if (forceOffReason) {
+    // Cancel any in-flight B-verify wait and steer the chain back to OFF
+    // (falls through to the settle/step block).
     waitingForBVerify = false;
-    targetPower = BOILER_OFF;
+    setBoilerTarget(BOILER_OFF, forceOffReason);
   } else if (waitingForBVerify) {
     // Block all stepping (especially the 1000→2000 C-toggle) until the
     // opto confirms B physically closed. Fault if it doesn't within 1s.
