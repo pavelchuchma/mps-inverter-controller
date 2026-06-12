@@ -305,7 +305,7 @@ static void refresh_inverter_status() {
     snprintf(buf, sizeof(buf), "SoC: %d%%", s.batt_soc);
     display_set_row(ROW_SOC, buf);
 
-    int pv_w = (int)(s.pv_input_current * s.pv_input_voltage);
+    int pv_w = (int)(s.pv_input_current_batt * s.pv_input_voltage);
     snprintf(buf, sizeof(buf), "PV: %dW", pv_w);
     display_set_row(ROW_PV_POWER, buf);
 

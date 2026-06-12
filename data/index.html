@@ -12,29 +12,29 @@
   </div>
 
   <div class="grid">
-    <div class="card"><div class="k">AC Out Voltage</div><div class="v"><span id="ac_out_voltage">—</span> V</div></div>
-    <div class="card"><div class="k">AC Out Frequency</div><div class="v"><span id="ac_out_frequency">—</span> Hz</div></div>
     <div class="card"><div class="k">AC Apparent (VA)</div><div class="v"><span id="ac_apparent_va">—</span> VA</div></div>
     <div class="card"><div class="k">AC Active (W)</div><div class="v"><span id="ac_active_w">—</span> W</div></div>
     <div class="card"><div class="k">Load %</div><div class="v"><span id="load_percent">—</span> %</div></div>
-    <div class="card"><div class="k">Batt voltage</div><div class="v"><span id="batt_voltage">—</span> V</div></div>
-    <div class="card"><div class="k">Batt charge current</div><div class="v"><span id="batt_charge_current">—</span> A</div></div>
-    <div class="card"><div class="k">Batt SoC</div><div class="v"><span id="batt_soc">—</span> %</div></div>
-    <div class="card"><div class="k">Heatsink temp</div><div class="v"><span id="heatsink_temp">—</span> °C</div></div>
-    <div class="card"><div class="k">PV input current</div><div class="v"><span id="pv_input_current">—</span> A</div></div>
-    <div class="card"><div class="k">PV input voltage</div><div class="v"><span id="pv_input_voltage">—</span> V</div></div>
-    <div class="card"><div class="k">Batt voltage from SCC</div><div class="v"><span id="batt_voltage_from_scc">—</span> V</div></div>
-    <div class="card"><div class="k">Batt discharge current</div><div class="v"><span id="batt_discharge_current">—</span> A</div></div>
-    <div class="card"><div class="k">PV charging power</div><div class="v"><span id="pv_charging_power">—</span> W</div></div>
-    <div class="card"><div class="k">Mode</div><div class="v"><span id="g_inverter_mode_code">—</span> <span id="g_inverter_mode_name">—</span></div></div>
     <div class="sep"></div>
-    <div class="card" id="phone_battery_card"><div class="k">Mobile Battery</div><div class="v multiline"><span id="phone_battery_v">—</span><span class="stale-suffix" id="phone_battery_stale"></span></div></div>
-    <div class="card"><div class="k">Mobile Charger</div><div class="v"><span id="charger_status">—</span></div></div>
-    <div class="card" id="phone_rmnet_card"><div class="k">Mobile data</div><div class="v"><span id="phone_rmnet_v">—</span><span class="stale-suffix" id="phone_rmnet_stale"></span></div></div>
+    <div class="card"><div class="k">PV input voltage</div><div class="v"><span id="pv_input_voltage">—</span> V</div></div>
+    <div class="card"><div class="k">PV charging power</div><div class="v"><span id="pv_charging_power">—</span> W</div></div>
+    <div class="card"><div class="k">Batt voltage from SCC</div><div class="v"><span id="batt_voltage_from_scc">—</span> V</div></div>
+    <div class="card"><div class="k">Batt charge current</div><div class="v"><span id="batt_charge_current">—</span> A</div></div>
+    <div class="card"><div class="k">Batt discharge current</div><div class="v"><span id="batt_discharge_current">—</span> A</div></div>
+    <div class="card"><div class="k">PV input current (battery)</div><div class="v"><span id="pv_input_current_batt">—</span> A</div></div>
+    <div class="card"><div class="k">Batt SoC</div><div class="v"><span id="batt_soc">—</span> %</div></div>
+    <div class="card"><div class="k">Batt voltage</div><div class="v"><span id="batt_voltage">—</span> V</div></div>
+    <div class="card"><div class="k">Mode</div><div class="v"><span id="g_inverter_mode_code">—</span> <span id="g_inverter_mode_name">—</span></div></div>
+    <div class="card"><div class="k">AC Out Voltage</div><div class="v"><span id="ac_out_voltage">—</span> V</div></div>
+    <div class="card"><div class="k">Heatsink temp</div><div class="v"><span id="heatsink_temp">—</span> °C</div></div>
     <div class="sep"></div>
     <div class="card"><div class="k">Teplota (H/L)</div><div class="v"><span id="tempH">—</span>/<span id="tempL">—</span> °C</div></div>
     <div class="card"><div class="k">Boiler</div><div class="v"><span id="boiler_status">—</span></div><div class="btn-group" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;"><button class="boiler-btn" onclick="setBoiler(0)">OFF</button><button class="boiler-btn" onclick="setBoiler(1)">500W</button><button class="boiler-btn" onclick="setBoiler(2)">1000W</button><button class="boiler-btn" onclick="setBoiler(3)">2000W</button></div></div>
     <div class="card"><div class="k">Boiler input</div><div class="v"><span id="boiler_on">—</span></div></div>
+    <div class="sep"></div>
+    <div class="card" id="phone_battery_card"><div class="k">Mobile Battery</div><div class="v multiline"><span id="phone_battery_v">—</span><span class="stale-suffix" id="phone_battery_stale"></span></div></div>
+    <div class="card"><div class="k">Mobile Charger</div><div class="v"><span id="charger_status">—</span></div></div>
+    <div class="card" id="phone_rmnet_card"><div class="k">Mobile data</div><div class="v"><span id="phone_rmnet_v">—</span><span class="stale-suffix" id="phone_rmnet_stale"></span></div></div>
   </div>
 
     <div class="muted" style="margin-top:10px;">Log:</div>

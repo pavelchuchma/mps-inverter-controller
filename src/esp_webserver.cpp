@@ -75,7 +75,6 @@ static String makeStatusJson() {
   char mode_name[32] = "";
   inverter_get_mode(&mode_code, mode_name, sizeof(mode_name));
   doc["av"]  = s.ac_out_voltage;
-  doc["af"]  = s.ac_out_frequency;
   doc["aa"]  = s.ac_apparent_va;
   doc["aw"]  = s.ac_active_w;
   doc["lp"]  = s.load_percent;
@@ -83,7 +82,7 @@ static String makeStatusJson() {
   doc["bcc"] = s.batt_charge_current;
   doc["bs"]  = s.batt_soc;
   doc["ht"]  = s.heatsink_temp;
-  doc["pi"]  = s.pv_input_current;
+  doc["pi"]  = s.pv_input_current_batt;
   doc["piv"] = s.pv_input_voltage;
   doc["bvs"] = s.batt_voltage_from_scc;
   doc["bdc"] = s.batt_discharge_current;

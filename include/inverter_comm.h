@@ -21,7 +21,7 @@ struct InverterState {
   float batt_charge_current;    // KKK    Battery charging current [A]
   int   batt_soc;               // OOO    Battery capacity [%]
   float heatsink_temp;          // TTTT   Inverter heat sink temperature [°C] (or NTC A/D)
-  float pv_input_current;       // EEEE   PV input current for battery [A]
+  float pv_input_current_batt;  // EEEE   PV input current for battery [A]
   float pv_input_voltage;       // UUU.U  PV input voltage [V]
   float batt_voltage_from_scc;  // WW.WW  Battery voltage from SCC [V]
   float batt_discharge_current; // PPPPP  Battery discharge current [A]

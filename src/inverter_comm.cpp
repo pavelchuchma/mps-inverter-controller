@@ -224,7 +224,7 @@ static void parse_qpigs_payload(const String& p) {
     s.batt_charge_current = toks[9].toFloat();
     s.batt_soc = toks[10].toInt();
     s.heatsink_temp = toks[11].toFloat();
-    s.pv_input_current = toks[12].toFloat();
+    s.pv_input_current_batt = toks[12].toFloat();
     s.pv_input_voltage = toks[13].toFloat();
     s.batt_voltage_from_scc = toks[14].toFloat();
     s.batt_discharge_current = toks[15].toFloat();
@@ -265,7 +265,7 @@ static void print_status_and_mode_snapshot() {
     Serial.printf("AC Out V: %.2f V, AC Out F: %.2f Hz\n", s.ac_out_voltage, s.ac_out_frequency);
     Serial.printf("Apparent VA: %d VA, Active W: %d W, Load %%: %d\n", s.ac_apparent_va, s.ac_active_w, s.load_percent);
     Serial.printf("BUS V: %.2f V, Batt V: %.2f V, Batt Charge I: %.2f A, Batt SOC: %d %%\n", s.bus_voltage, s.batt_voltage, s.batt_charge_current, s.batt_soc);
-    Serial.printf("Heatsink: %.2f C, PV I: %.2f A, PV V: %.2f V\n", s.heatsink_temp, s.pv_input_current, s.pv_input_voltage);
+    Serial.printf("Heatsink: %.2f C, PV I: %.2f A, PV V: %.2f V\n", s.heatsink_temp, s.pv_input_current_batt, s.pv_input_voltage);
     Serial.printf("Batt V from SCC: %.2f V, Batt Disch I: %.2f A\n", s.batt_voltage_from_scc, s.batt_discharge_current);
     Serial.printf("Device status bits: 0x%02X, Additional status bits: 0x%02X\n", s.device_status_bits, s.additional_status_bits);
     Serial.printf("Batt fan offset: %d (10mV), EEPROM ver: %d, PV charging power: %d W\n", s.batt_fan_offset_10mv, s.eeprom_version, s.pv_charging_power);
