@@ -187,8 +187,10 @@ static void parse_qmod_payload(const String& p) {
   if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
 }
 
-// Parse QPIGS payload tokens and update g_inverter_status
-static void parse_qpigs_payload(const String& p) {
+// Parse QPIGS payload tokens and update g_inverter_status.
+// Returns true on a complete, stored set; false on a partial/garbled payload
+// (in which case the last good values are left untouched).
+static bool parse_qpigs_payload(const String& p) {
   // Tokens separated by a single space
   const int MAX_TOK = 64;
   String toks[MAX_TOK];
@@ -205,11 +207,11 @@ static void parse_qpigs_payload(const String& p) {
 
   // Expect a complete set of items (indexes 0..20 => 21 tokens)
   const int EXPECTED_TOKENS = 21;
-  bool valid_data = (tcount >= EXPECTED_TOKENS);
+  if (tcount < EXPECTED_TOKENS) return false;  // keep last good values
 
   InverterState s = { 0 };
-  if (valid_data) {
-    // Full set received -> fill values and mark data as valid
+  {
+    // Full set received -> fill values
     s.ts_ms = millis();
 
     s.grid_voltage = toks[0].toFloat();
@@ -237,9 +239,8 @@ static void parse_qpigs_payload(const String& p) {
 
   if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
   g_inverter_status = s;
-  // If we parsed a full set, consider data valid; otherwise remains as previously set
-  g_inverter_data_valid = valid_data;
   if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
+  return true;
 }
 
 // Print full status and mode to Serial (thread-safe snapshot)
@@ -277,30 +278,39 @@ static void print_status_and_mode_snapshot() {
 // Background task that queries QMOD and QPIGS periodically
 static void inverter_task(void* arg) {
   (void)arg;
+  uint8_t consec_fails = 0;
   for (;;) {
     // Query inverter
     // QMOD
     String payload;
-    bool failed = false;
+    bool ok = true;
     if (send_command_and_get_payload("QMOD", payload)) {
       parse_qmod_payload(payload);
     } else {
-      failed = true;
+      ok = false;
     }
 
     // QPIGS
     payload = String();
     if (send_command_and_get_payload("QPIGS", payload)) {
-      parse_qpigs_payload(payload);
+      if (!parse_qpigs_payload(payload)) ok = false;
     } else {
-      failed = true;
+      ok = false;
     }
-    
-    if (failed) {
-      // On any failure, mark data as invalid
+
+    if (ok) {
+      consec_fails = 0;
       if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
-      g_inverter_data_valid = false;
+      g_inverter_data_valid = true;
       if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
+    } else {
+      // Tolerate occasional dropouts: invalidate only after N consecutive fails.
+      if (consec_fails < INVERTER_FAIL_INVALIDATE_THRESHOLD) consec_fails++;
+      if (consec_fails >= INVERTER_FAIL_INVALIDATE_THRESHOLD) {
+        if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
+        g_inverter_data_valid = false;
+        if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
+      }
     }
 
     // Print snapshot after each poll cycle
@@ -334,6 +344,14 @@ bool inverter_get_status(InverterState* out) {
   *out = g_inverter_status;
   if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
   return true;
+}
+
+bool inverter_data_valid() {
+  bool v;
+  if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
+  v = g_inverter_data_valid;
+  if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
+  return v;
 }
 
 bool inverter_get_mode(char* out_code, char* out_name, size_t name_cap) {

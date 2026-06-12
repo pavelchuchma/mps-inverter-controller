@@ -1,4 +1,5 @@
 #include "relay.h"
+#include "inverter_comm.h"
 
 // State encoded as 3-bit bitmask CBA  (bit0=A, bit1=B, bit2=C).
 // Index = power rank along the safe chain.
@@ -82,9 +83,10 @@ void tickBoiler() {
 
   uint32_t now = millis();
 
-  if (!isBoilerOn()) {
-    // Mains absent at A.COM: no heating possible, no AC for the opto
-    // to detect. Cancel any in-flight B-verify wait and steer the
+  if (!isBoilerOn() || !inverter_data_valid()) {
+    // Mains absent at A.COM (no heating possible, no AC for the opto to
+    // detect), or inverter data is stale/lost (comms down for several
+    // consecutive polls). Cancel any in-flight B-verify wait and steer the
     // chain back to OFF (falls through to the settle/step block).
     waitingForBVerify = false;
     targetPower = BOILER_OFF;

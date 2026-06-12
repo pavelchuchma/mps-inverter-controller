@@ -7,6 +7,10 @@
 // Polling interval (ms) between QMOD+QPIGS cycles
 #define INVERTER_POLL_INTERVAL_MS 3000
 
+// Consecutive failed poll cycles tolerated before inverter data is marked
+// invalid. Occasional single dropouts are acceptable and must not invalidate.
+#define INVERTER_FAIL_INVALIDATE_THRESHOLD 3
+
 // Parsed status structure (subset of QPIGS fields)
 struct InverterState {
   float grid_voltage;           // BBB.B  Grid voltage [V]
@@ -47,4 +51,6 @@ void inverter_comm_init(int rx_pin, int tx_pin);
 
 // Access functions that copy protected data (thread-safe)
 bool inverter_get_status(InverterState* out);
+// Thread-safe read of the inverter data validity flag.
+bool inverter_data_valid();
 bool inverter_get_mode(char* out_code, char* out_name, size_t name_cap);
