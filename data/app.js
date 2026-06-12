@@ -65,6 +65,7 @@ function formatMsToHMS(ms) {
 let resetReasonLogged = false;
 let boilerPower = 0;
 let boilerFault = false;
+let boilerInputOn = true; // start enabled; updated from j.bo on first /status
 const boilerLabels = ["OFF", "500W", "1000W", "2000W"];
 
 // Temperature: integer display with hysteresis — a new value is committed only
@@ -204,9 +205,9 @@ async function fetchStatus() {
     }
 
     if (j.bo !== undefined) {
-      const on = !!j.bo;
-      $("boiler_on").textContent = on ? "ON" : "OFF";
-      $("boiler_on").style.color = on ? "#22c55e" : "#ef4444";
+      boilerInputOn = !!j.bo;
+      $("boiler_on").textContent = boilerInputOn ? "ON" : "OFF";
+      $("boiler_on").style.color = boilerInputOn ? "#22c55e" : "#ef4444";
     }
 
     const newFault = !!j.bf;
@@ -232,12 +233,13 @@ async function fetchStatus() {
         statusEl.style.fontWeight = "";
         statusEl.style.padding = "";
       }
+      const btnsDisabled = boilerFault || !boilerInputOn;
       document.querySelectorAll(".boiler-btn").forEach((btn, i) => {
-        btn.disabled = boilerFault;
-        btn.style.opacity = boilerFault ? "0.4" : "";
-        btn.style.cursor = boilerFault ? "not-allowed" : "";
-        btn.style.background = (!boilerFault && i === boilerPower) ? "#dbeafe" : "";
-        btn.style.fontWeight = (!boilerFault && i === boilerPower) ? "700" : "";
+        btn.disabled = btnsDisabled;
+        btn.style.opacity = btnsDisabled ? "0.4" : "";
+        btn.style.cursor = btnsDisabled ? "not-allowed" : "";
+        btn.style.background = (!btnsDisabled && i === boilerPower) ? "#dbeafe" : "";
+        btn.style.fontWeight = (!btnsDisabled && i === boilerPower) ? "700" : "";
       });
     }
 
