@@ -179,8 +179,7 @@ async function fetchStatus() {
     } else {
       const pct = j.phbp;
       const statusRaw = (j.phbs || "").toString();
-      const status = statusRaw.toLowerCase().replace(/_/g, " ");
-      let battText = status ? `${pct}% (${status})` : `${pct}%`;
+      let battText = `${pct}%`;
       if (j.phbc !== undefined && j.phbc !== null) {
         const ma = Number(j.phbc);
         const sign = ma > 0 ? "+" : "";
