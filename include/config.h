@@ -30,6 +30,15 @@
 // GPIO6-11 = internal SPI flash, do not use
 // (boot) = strapping pin, affects boot behavior
 
+// --- Metrics upload to InfluxDB ---
+// Sample all UI values every 10s into a RAM buffer; flush the whole buffer to
+// InfluxDB in a single HTTP POST once per minute (6 samples/batch). Keeps the
+// 10s resolution for retrospective power-management analysis while sparing the
+// RPi's SD card (one request/min instead of six).
+#define METRICS_SAMPLE_INTERVAL_MS 10000
+#define METRICS_SAMPLES_PER_FLUSH  6
+#define METRICS_HTTP_TIMEOUT_MS    5000
+
 // --- Inverter UART (via MAX3232) ---
 // Feather ESP32 default: RX2=GPIO16, TX2=GPIO17
 #define INVERTER_RX_PIN 17

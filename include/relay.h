@@ -45,6 +45,16 @@ enum BoilerPower : uint8_t {
   BOILER_2000W  = 3,
 };
 
+// Maps a boiler power rank to its electrical power in watts.
+inline int boilerPowerToWatts(BoilerPower power) {
+  switch (power) {
+  case BOILER_500W:  return 500;
+  case BOILER_1000W: return 1000;
+  case BOILER_2000W: return 2000;
+  default:           return 0;
+  }
+}
+
 // Individual heating relay setters (on = relay energized = COM↔NO).
 inline void setRelayBoilerA(bool on) {
   digitalWrite(RELAY_BOILER_A, on ? HIGH : LOW);

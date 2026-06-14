@@ -11,6 +11,7 @@
 #include "inverter_comm.h"
 #include "phone.h"
 #include "phone_charger.h"
+#include "influx.h"
 #include "relay.h"
 #include "utils.h"
 #include <esp_system.h>
@@ -208,6 +209,10 @@ void setup() {
 
   // Start polling phone status endpoint (background task, 30s interval)
   phone_comm_init();
+
+  // Start metrics upload to InfluxDB (background task, samples every 10s,
+  // flushes one batched POST per minute)
+  influx_init();
 }
 
 
