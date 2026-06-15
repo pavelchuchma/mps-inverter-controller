@@ -21,9 +21,33 @@ static constexpr uint16_t B_VERIFY_TIMEOUT_MS = 1000;  // opto + RC filter can b
 // small and would drain quickly). Any battery discharge above this current [A]
 // counts as "discharging".
 static constexpr float BOILER_MAX_BATT_DISCHARGE_A = 0.0f;
-// Discharge must persist this long before the boiler is forced off, so a brief
-// load spike does not trip it.
-static constexpr uint32_t BOILER_DISCHARGE_OFF_MS = 5000;
+// Discharge must persist this long before the boiler steps down one level. With
+// inverter data refreshed only every INVERTER_POLL_INTERVAL_MS (3 s) this is
+// just a few samples, so it is kept generous to give the inverter time to react
+// before we intervene.
+static constexpr uint32_t BOILER_DISCHARGE_OFF_MS = 10000;
+
+// --- Automatic power regulation thresholds ---
+// AC output active power above this [W] forces the boiler off (inverter overload
+// guard). If the boiler is wired on the inverter output its own draw counts
+// toward this, so OFF (not a single step down) is the safe action.
+static constexpr int BOILER_OVERLOAD_W = 5000;
+// Overload must persist this long before acting. Inverter data refreshes only
+// every INVERTER_POLL_INTERVAL_MS, so wait one refresh period + 1 s to ride out
+// a single transient spike between polls.
+static constexpr uint32_t BOILER_OVERLOAD_OFF_MS = INVERTER_POLL_INTERVAL_MS + 1000;
+// Conditions under which a step up is allowed (PV surplus is plausible).
+static constexpr int BOILER_RAISE_MIN_SOC = 70;         // battery SOC [%]
+static constexpr float BOILER_RAISE_MIN_PV_V = 350.0f;  // PV input voltage [V]
+// Minimum time between successive step-ups during normal operation.
+static constexpr uint32_t BOILER_RAISE_INTERVAL_MS = 15UL * 60 * 1000;  // 15 min
+// Morning gate: in weak morning sun SOC and PV voltage both read "good" while the
+// panels cannot yet carry even 500 W (a near-full small battery also makes charge
+// current useless as a surplus signal). So step-ups are blocked until this long
+// after PV voltage first rises above BOILER_MORNING_PV_V (~dawn). Tracked via
+// millis() from the rising edge — no RTC or sunrise time needed.
+static constexpr float BOILER_MORNING_PV_V = 300.0f;    // PV voltage marking dawn [V]
+static constexpr uint32_t BOILER_MORNING_DELAY_MS = 3UL * 60 * 60 * 1000;  // 3 h
 
 // volatile: currentPower may be read from another FreeRTOS task
 // (inverter control). 1-byte enum reads are atomic on Xtensa.
@@ -39,9 +63,25 @@ static bool waitingForBVerify = false;
 static uint32_t bVerifyStartMs = 0;
 
 // Tracks how long the battery has been continuously discharging, so the boiler
-// is only cut after BOILER_DISCHARGE_OFF_MS of sustained discharge.
+// is only stepped down after BOILER_DISCHARGE_OFF_MS of sustained discharge.
 static bool battDischarging = false;
 static uint32_t dischargeStartMs = 0;
+
+// Tracks how long the AC output has been continuously overloaded, so a brief
+// load spike does not force the boiler off (see BOILER_OVERLOAD_OFF_MS).
+static bool overloading = false;
+static uint32_t overloadStartMs = 0;
+
+// Last time the commanded target changed (up or down). Used to space out the
+// automatic step-ups (BOILER_RAISE_INTERVAL_MS).
+static uint32_t lastPowerChangeMs = 0;
+
+// Morning gate state: when PV voltage first crossed BOILER_MORNING_PV_V today
+// and whether it is currently above it. pvInit guards the first reading after
+// boot (dawn time is then unknown).
+static bool pvInit = false;
+static bool pvAbove300 = false;
+static uint32_t pvCrossed300Ms = 0;
 
 // Sticky fault state. Once set, only a reboot clears it.
 static volatile bool boilerFault = false;
@@ -88,6 +128,7 @@ void boilerRelayInit() {
   currentPower = BOILER_OFF;
   targetPower = BOILER_OFF;
   lastStepMs = millis();
+  lastPowerChangeMs = millis();
   waitingForBVerify = false;
 }
 
@@ -99,6 +140,7 @@ static void setBoilerTarget(BoilerPower target, const char* reason) {
   printInfo("Boiler target %s -> %s (%s)", POWER_LABELS[targetPower],
             POWER_LABELS[target], reason);
   targetPower = target;
+  lastPowerChangeMs = millis();
 }
 
 void setBoilerPower(BoilerPower target) {
@@ -106,15 +148,48 @@ void setBoilerPower(BoilerPower target) {
   setBoilerTarget(target, "Web UI");
 }
 
-void tickBoiler() {
-  if (boilerFault) return;
+// Automatic power regulation from inverter state. Only called while the inverter
+// data is valid and the boiler is in normal operation (no fault, not mid-B-verify).
+// Snapshots the inverter data once, updates the morning gate and applies the
+// rules in priority order: AC overload (OFF) > battery discharge (one step down)
+// > PV surplus (one step up).
+static void autoRegulate(uint32_t now) {
+  InverterState s;
+  inverter_get_status(&s);
 
-  uint32_t now = millis();
+  // Morning gate: block step-ups until BOILER_MORNING_DELAY_MS after PV voltage
+  // first rises above BOILER_MORNING_PV_V (~dawn).
+  bool pvUp = s.pv_input_voltage > BOILER_MORNING_PV_V;
+  if (!pvInit) {
+    // First valid reading after boot. Dawn time is unknown, so if PV is already
+    // up assume the morning warm-up has passed and open the gate (rule 2 still
+    // protects the battery). Modular subtraction is correct even for small now.
+    pvInit = true;
+    pvAbove300 = pvUp;
+    pvCrossed300Ms = pvUp ? (now - BOILER_MORNING_DELAY_MS) : now;
+  } else if (pvUp && !pvAbove300) {
+    pvAbove300 = true;
+    pvCrossed300Ms = now;  // dawn rising edge
+  } else if (!pvUp) {
+    pvAbove300 = false;  // re-arm for the next day
+  }
+  bool morningPassed = pvAbove300 &&
+                       (now - pvCrossed300Ms >= BOILER_MORNING_DELAY_MS);
 
-  // Track sustained battery discharge. A brief spike must not cut the boiler,
-  // so we require BOILER_DISCHARGE_OFF_MS of continuous discharge.
-  bool discharging = inverter_data_valid() &&
-                     inverter_batt_discharge_current() > BOILER_MAX_BATT_DISCHARGE_A;
+  // Rule 1: sustained AC output overload -> force OFF.
+  bool overload = s.ac_active_w > BOILER_OVERLOAD_W;
+  if (overload && !overloading) {
+    overloading = true;
+    overloadStartMs = now;
+  } else if (!overload) {
+    overloading = false;
+  }
+  bool sustainedOverload = overloading &&
+                           (now - overloadStartMs >= BOILER_OVERLOAD_OFF_MS);
+
+  // Rule 2: sustained battery discharge -> step down one level. A brief spike
+  // must not trip it, so require BOILER_DISCHARGE_OFF_MS of continuous discharge.
+  bool discharging = s.batt_discharge_current > BOILER_MAX_BATT_DISCHARGE_A;
   if (discharging && !battDischarging) {
     battDischarging = true;
     dischargeStartMs = now;
@@ -124,20 +199,39 @@ void tickBoiler() {
   bool sustainedDischarge = battDischarging &&
                             (now - dischargeStartMs >= BOILER_DISCHARGE_OFF_MS);
 
-  // Mains absent at A.COM (no heating possible, no AC for the opto to detect),
-  // inverter data stale/lost (comms down for several consecutive polls), or the
-  // battery has been discharging for too long (boiler must run on PV surplus
-  // only, never drain the battery) — force the chain back to OFF.
+  if (sustainedOverload) {
+    setBoilerTarget(BOILER_OFF, "AC overload");
+  } else if (sustainedDischarge && targetPower > BOILER_OFF) {
+    setBoilerTarget((BoilerPower)(targetPower - 1), "battery discharge");
+    dischargeStartMs = now;  // restart timer so the next step-down waits again
+  } else if (targetPower < BOILER_2000W && morningPassed &&
+             s.batt_soc > BOILER_RAISE_MIN_SOC &&
+             s.pv_input_voltage > BOILER_RAISE_MIN_PV_V &&
+             (now - lastPowerChangeMs >= BOILER_RAISE_INTERVAL_MS)) {
+    setBoilerTarget((BoilerPower)(targetPower + 1), "PV surplus");
+  }
+}
+
+void tickBoiler() {
+  if (boilerFault) return;
+
+  uint32_t now = millis();
+
+  // Mains absent at A.COM (no heating possible, no AC for the opto to detect) or
+  // inverter data stale/lost (comms down for several consecutive polls) — force
+  // the chain back to OFF. Automatic regulation runs only when neither holds.
   const char* forceOffReason = nullptr;
   if (!isBoilerOn()) forceOffReason = "boiler input off";
   else if (!inverter_data_valid()) forceOffReason = "inverter data invalid";
-  else if (sustainedDischarge) forceOffReason = "battery discharge";
 
   if (forceOffReason) {
     // Cancel any in-flight B-verify wait and steer the chain back to OFF
-    // (falls through to the settle/step block).
+    // (falls through to the settle/step block). Reset the auto trackers so we
+    // do not act on stale timing when normal operation resumes.
     waitingForBVerify = false;
     setBoilerTarget(BOILER_OFF, forceOffReason);
+    overloading = false;
+    battDischarging = false;
   } else if (waitingForBVerify) {
     // Block all stepping (especially the 1000→2000 C-toggle) until the
     // opto confirms B physically closed. Fault if it doesn't within 1s.
@@ -152,6 +246,9 @@ void tickBoiler() {
     // phase above only exits on a HIGH read) and has now dropped.
     emergencyShutdown("Relay B mismatch: commanded ON, sensor reads OFF");
     return;
+  } else {
+    // Normal operation: adjust the target from inverter state.
+    autoRegulate(now);
   }
 
   if (now - lastStepMs < RELAY_SETTLE_MS) return;
