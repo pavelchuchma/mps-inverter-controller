@@ -375,6 +375,50 @@ static void task_midnight_reboot() {
   }
 }
 
+// Runtime WiFi safety net. The core's auto-reconnect normally re-associates on
+// its own when the AP comes back, but it can occasionally give up for good
+// (e.g. after an AP restart). So: after ~2 min offline force an explicit
+// reconnect (retried every minute), and after ~10 min offline reboot as a hard
+// fallback. The boot-time connect timeout only covers the initial connect.
+static void task_wifi_health() {
+  static uint32_t disconnectedSinceMs = 0;  // 0 = currently connected
+  static uint32_t lastReconnectMs = 0;
+
+  if (WiFi.isConnected()) {
+    if (disconnectedSinceMs != 0) {
+      printInfo("WiFi reconnected (RSSI %d dBm)", (int)WiFi.RSSI());
+      disconnectedSinceMs = 0;
+      lastReconnectMs = 0;
+    }
+    return;
+  }
+
+  uint32_t now = millis();
+  if (disconnectedSinceMs == 0) {
+    disconnectedSinceMs = now;
+    printWarning("WiFi link lost, waiting for auto-reconnect");
+    return;
+  }
+
+  uint32_t downMs = now - disconnectedSinceMs;
+
+  if (downMs >= 10UL * 60 * 1000) {
+    printWarning("WiFi down for >10 min, restarting");
+    delay(100);  // let the log line flush over serial
+    ESP.restart();
+  }
+
+  // Force a reconnect once the core's auto-reconnect has had a couple of
+  // minutes, then retry once a minute.
+  if (downMs >= 2UL * 60 * 1000 &&
+      (lastReconnectMs == 0 || (now - lastReconnectMs) >= 60UL * 1000)) {
+    printWarning("WiFi down for %us, forcing reconnect", (unsigned)(downMs / 1000));
+    WiFi.disconnect();
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    lastReconnectMs = now;
+  }
+}
+
 // Task table and their periods
 static Task tasks[] = {
   {  50u,      0u, &task_scan_touch },
@@ -384,6 +428,7 @@ static Task tasks[] = {
   { 1000u,     0u, &checkDisplayBacklightTimeout },
   { 10000u,    0u, &tickPhoneCharger },
   { 30000u,    0u, &task_midnight_reboot },
+  { 30000u,    0u, &task_wifi_health },
 };
 
 void loop() {
