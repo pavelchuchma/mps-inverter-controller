@@ -356,6 +356,25 @@ static void task_update_boiler() {
   display_redraw();
 }
 
+// Reboot once a day at midnight as a stability measure — the firmware has
+// occasionally panicked after ~a week of uptime (suspected memory
+// fragmentation or a library leak). Guards: only act once NTP has set a real
+// wall clock, and only after the device has been up long enough that the
+// post-reboot device (back online within the same 00:00 minute) does not
+// immediately reboot again.
+static void task_midnight_reboot() {
+  time_t now = time(nullptr);
+  if (now < 24 * 3600) return;             // NTP not synced yet
+  if (millis() < 5UL * 60 * 1000) return;  // avoid re-trigger right after the reboot
+  struct tm t;
+  localtime_r(&now, &t);
+  if (t.tm_hour == 0 && t.tm_min == 0) {
+    printWarning("Midnight scheduled restart for stability");
+    delay(100);  // let the log line flush over serial
+    ESP.restart();
+  }
+}
+
 // Task table and their periods
 static Task tasks[] = {
   {  50u,      0u, &task_scan_touch },
@@ -364,6 +383,7 @@ static Task tasks[] = {
   { 1000u,     0u, &task_update_boiler },
   { 1000u,     0u, &checkDisplayBacklightTimeout },
   { 10000u,    0u, &tickPhoneCharger },
+  { 30000u,    0u, &task_midnight_reboot },
 };
 
 void loop() {
