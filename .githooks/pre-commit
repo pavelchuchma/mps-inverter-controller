@@ -1,0 +1,9 @@
+#!/bin/sh
+# Safety net: refuse to commit secrets in include/credentials.h.
+# This file must stay local only — see include/credentials.h.example.
+if git diff --cached --name-only --diff-filter=d | grep -qx 'include/credentials.h'; then
+	echo "ERROR: include/credentials.h is staged for commit." >&2
+	echo "This file holds real secrets and must never be committed." >&2
+	echo "Unstage it with:  git rm --cached include/credentials.h" >&2
+	exit 1
+fi

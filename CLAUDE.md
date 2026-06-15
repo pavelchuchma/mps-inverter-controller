@@ -1,5 +1,18 @@
 # Project Notes
 
+## Credentials / secrets
+
+`include/credentials.h` holds real secrets and is git-ignored — never commit it.
+After a fresh clone, create it from the tracked template and enable the safety hook:
+
+```
+cp include/credentials.h.example include/credentials.h   # then fill in real values
+git config core.hooksPath .githooks                       # blocks committing credentials.h
+```
+
+The `.githooks/pre-commit` hook refuses any commit that stages `include/credentials.h`
+(even via `git add -f`).
+
 ## Uploading web files to ESP32 LittleFS
 
 `pio remote run -t uploadfs` fails (partition table not found on remote agent).
