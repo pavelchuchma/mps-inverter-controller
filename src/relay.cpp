@@ -47,7 +47,12 @@ static constexpr uint32_t BOILER_RAISE_INTERVAL_MS = 15UL * 60 * 1000;  // 15 mi
 // after PV voltage first rises above BOILER_MORNING_PV_V (~dawn). Tracked via
 // millis() from the rising edge — no RTC or sunrise time needed.
 static constexpr float BOILER_MORNING_PV_V = 300.0f;    // PV voltage marking dawn [V]
-static constexpr uint32_t BOILER_MORNING_DELAY_MS = 3UL * 60 * 60 * 1000;  // 3 h
+static constexpr uint32_t BOILER_MORNING_DELAY_MS = 2UL * 60 * 60 * 1000;  // 2 h
+// Re-arm the morning gate only after PV voltage stays below BOILER_MORNING_PV_V
+// for this long (~nightfall). A brief daytime dip (cloud + load spike pulling the
+// MPP down) must NOT re-arm it, otherwise the morning delay would restart mid-day.
+// millis()-based, so it works without a network clock.
+static constexpr uint32_t BOILER_MORNING_REARM_MS = 60UL * 60 * 1000;  // 1 h
 
 // volatile: currentPower may be read from another FreeRTOS task
 // (inverter control). 1-byte enum reads are atomic on Xtensa.
@@ -78,10 +83,12 @@ static uint32_t lastPowerChangeMs = 0;
 
 // Morning gate state: when PV voltage first crossed BOILER_MORNING_PV_V today
 // and whether it is currently above it. pvInit guards the first reading after
-// boot (dawn time is then unknown).
+// boot (dawn time is then unknown). pvBelowSinceMs debounces re-arming so a brief
+// daytime dip does not reset the gate (see BOILER_MORNING_REARM_MS).
 static bool pvInit = false;
 static bool pvAbove300 = false;
 static uint32_t pvCrossed300Ms = 0;
+static uint32_t pvBelowSinceMs = 0;  // when PV first dropped below 300 V (0 = above)
 
 // Sticky fault state. Once set, only a reboot clears it.
 static volatile bool boilerFault = false;
@@ -158,7 +165,9 @@ static void autoRegulate(uint32_t now) {
   inverter_get_status(&s);
 
   // Morning gate: block step-ups until BOILER_MORNING_DELAY_MS after PV voltage
-  // first rises above BOILER_MORNING_PV_V (~dawn).
+  // first rises above BOILER_MORNING_PV_V (~dawn). The gate is re-armed only after
+  // PV stays below that threshold for BOILER_MORNING_REARM_MS (~nightfall), so a
+  // brief daytime dip does not restart the delay mid-day.
   bool pvUp = s.pv_input_voltage > BOILER_MORNING_PV_V;
   if (!pvInit) {
     // First valid reading after boot. Dawn time is unknown, so if PV is already
@@ -167,11 +176,20 @@ static void autoRegulate(uint32_t now) {
     pvInit = true;
     pvAbove300 = pvUp;
     pvCrossed300Ms = pvUp ? (now - BOILER_MORNING_DELAY_MS) : now;
-  } else if (pvUp && !pvAbove300) {
-    pvAbove300 = true;
-    pvCrossed300Ms = now;  // dawn rising edge
-  } else if (!pvUp) {
-    pvAbove300 = false;  // re-arm for the next day
+    pvBelowSinceMs = 0;
+  } else if (pvUp) {
+    if (!pvAbove300) {
+      pvAbove300 = true;
+      pvCrossed300Ms = now;  // dawn rising edge
+    }
+    pvBelowSinceMs = 0;  // sun is back — cancel any pending re-arm
+  } else {  // PV below 300 V
+    if (pvAbove300) {
+      if (pvBelowSinceMs == 0) pvBelowSinceMs = now;
+      if (now - pvBelowSinceMs >= BOILER_MORNING_REARM_MS) {
+        pvAbove300 = false;  // sustained low (~nightfall) — re-arm for next day
+      }
+    }
   }
   bool morningPassed = pvAbove300 &&
                        (now - pvCrossed300Ms >= BOILER_MORNING_DELAY_MS);
