@@ -36,6 +36,15 @@ void tickPhoneCharger() {
   bool was_on = isMobileChargerOn();
   if (was_on == want_on) return;
 
+  // Duration of the phase that just ended (how long the phone was
+  // charging / not charging). 0 at boot = since startup (charger ON
+  // from main setup).
+  static uint32_t last_transition_ms = 0;
+  uint32_t held_min = (millis() - last_transition_ms) / 60000UL;
+  unsigned hh = (unsigned)(held_min / 60);
+  unsigned mm = (unsigned)(held_min % 60);
+  last_transition_ms = millis();
+
   setMobileCharger(want_on);
   if (stale) {
     printInfo("[CHARGER] %s -> %s (reason=%s, valid=%d age=%us)",
@@ -45,10 +54,10 @@ void tickPhoneCharger() {
                  (int)valid,
                  (unsigned)(age_ms / 1000));
   } else {
-    printInfo("[CHARGER] %s (reason=%s, %d%% age=%us)",
+    printInfo("[CHARGER] %s (reason=%s, %d%% %02u:%02u)",
                  want_on ? "ON" : "OFF",
                  reason,
                  s.battery_percentage,
-                 (unsigned)(age_ms / 1000));
+                 hh, mm);
   }
 }
