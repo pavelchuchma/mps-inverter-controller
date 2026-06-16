@@ -4,6 +4,7 @@
 #include <HTTPClient.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <freertos/semphr.h>
 #include <time.h>
 #include <math.h>
 
@@ -54,6 +55,11 @@ static void appendStr(String& line, bool& first, const char* key, const char* v)
   line += b;
   first = false;
 }
+
+// Buffer for off-cadence event snapshots produced by other tasks (e.g. a boiler
+// power change). influx_task drains it into its batch buffer under the mutex.
+static String pendingEvents;
+static SemaphoreHandle_t eventMutex = nullptr;
 
 // Append one timestamped sample (all measurements) to the batch buffer.
 static void append_sample(String& buf, time_t ts) {
@@ -160,12 +166,36 @@ static void flush(const String& buf) {
   http.end();
 }
 
+// Capture a full snapshot now and queue it for the next flush. Safe to call from
+// any task; the snapshot reflects live state at call time, so it records the
+// state right before a boiler power change. The reason for the change is not
+// stored here — look it up in the app log if needed.
+void influx_log_event() {
+  if (!eventMutex) return;  // called before influx_init
+  time_t now = time(nullptr);
+  if (now <= 24 * 3600) return;  // NTP not set yet, timestamp would be bogus
+  xSemaphoreTake(eventMutex, portMAX_DELAY);
+  append_sample(pendingEvents, now);
+  xSemaphoreGive(eventMutex);
+}
+
 static void influx_task(void* arg) {
   (void)arg;
   String buf;
   buf.reserve(4096);
   int count = 0;
   for (;;) {
+    // Drain any off-cadence events captured by other tasks and flush them
+    // promptly (within one sample interval) rather than waiting for the full
+    // minute batch, so a decision shows up quickly in Grafana.
+    xSemaphoreTake(eventMutex, portMAX_DELAY);
+    if (pendingEvents.length() > 0) {
+      buf += pendingEvents;
+      pendingEvents = "";
+      count = METRICS_SAMPLES_PER_FLUSH;  // force flush this iteration
+    }
+    xSemaphoreGive(eventMutex);
+
     time_t now = time(nullptr);
     // Only sample once WiFi is up and NTP has set a real wall-clock time
     // (otherwise the per-sample timestamp would be bogus). Skipped samples
@@ -183,6 +213,7 @@ static void influx_task(void* arg) {
 }
 
 void influx_init() {
+  eventMutex = xSemaphoreCreateMutex();
   xTaskCreatePinnedToCore(
     influx_task,
     "influx_task",

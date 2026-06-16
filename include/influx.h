@@ -8,3 +8,9 @@
 
 // Start the background upload task. Call once after WiFi/WireGuard are up.
 void influx_init();
+
+// Capture a full snapshot now and queue it for the next flush. Records an
+// off-cadence point outside the periodic grid — used to log the state right
+// before a boiler power change for later debugging (the reason itself stays in
+// the app log). Safe to call from any task.
+void influx_log_event();

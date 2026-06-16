@@ -1,5 +1,6 @@
 #include "relay.h"
 #include "inverter_comm.h"
+#include "influx.h"
 #include "utils.h"
 
 // Human-readable boiler power labels for logging.
@@ -106,6 +107,8 @@ static void writeBits(uint8_t bits) {
 
 static void emergencyShutdown(const char* reason) {
   if (boilerFault) return;            // idempotent
+  // Snapshot the pre-shutdown state before relays and currentPower are zeroed.
+  influx_log_event();
   boilerFault = true;
   boilerFaultReason = reason;
 
@@ -146,6 +149,8 @@ static void setBoilerTarget(BoilerPower target, const char* reason) {
   if (target == targetPower) return;
   printInfo("Boiler target %s -> %s (%s)", POWER_LABELS[targetPower],
             POWER_LABELS[target], reason);
+  // Snapshot the state that drove this decision before applying the change.
+  influx_log_event();
   targetPower = target;
   lastPowerChangeMs = millis();
 }
