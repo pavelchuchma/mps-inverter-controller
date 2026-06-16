@@ -95,10 +95,10 @@ BoilerPower getBoilerPower();
 bool isBoilerFault();
 const char* getBoilerFaultReason();   // nullptr if no fault
 
-// Reads the BOILER_ON_PIN input — true when boiler is reported as on
-inline bool isBoilerOn() {
-  return digitalRead(BOILER_ON_PIN) == LOW;
-}
+// Debounced BOILER_ON_PIN state — true when boiler is reported as on. The raw pin
+// picks up brief noise glitches, so the value is debounced in relay.cpp
+// (sampleBoilerInput) rather than read directly here.
+bool isBoilerOn();
 
 // --- Mobile charger relay ---
 // HIGH = on (charging enabled), LOW = off

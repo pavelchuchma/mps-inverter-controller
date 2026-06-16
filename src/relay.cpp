@@ -55,6 +55,15 @@ static constexpr uint32_t BOILER_MORNING_DELAY_MS = 2UL * 60 * 60 * 1000;  // 2 
 // millis()-based, so it works without a network clock.
 static constexpr uint32_t BOILER_MORNING_REARM_MS = 60UL * 60 * 1000;  // 1 h
 
+// BOILER_ON_PIN reads a clean steady level when the boiler is genuinely on (LOW) or
+// off (HIGH), but the high-impedance INPUT_PULLUP picks up brief (sub-10 ms) noise
+// glitches that flip a single read. An un-debounced read let one glitch trigger a
+// spurious autoRegulate() step-up that the next read immediately reverted. Require the
+// raw level to hold continuously for this long before the reported state follows it,
+// rejecting glitches in either direction. Negligible vs. the heating timescale; long
+// enough to swamp any plausible glitch. See sampleBoilerInput().
+static constexpr uint32_t BOILER_INPUT_DEBOUNCE_MS = 200;
+
 // volatile: currentPower may be read from another FreeRTOS task
 // (inverter control). 1-byte enum reads are atomic on Xtensa.
 static volatile BoilerPower currentPower = BOILER_OFF;
@@ -81,6 +90,15 @@ static uint32_t overloadStartMs = 0;
 // Last time the commanded target changed (up or down). Used to space out the
 // automatic step-ups (BOILER_RAISE_INTERVAL_MS).
 static uint32_t lastPowerChangeMs = 0;
+
+// Debounced boiler-input state (see BOILER_INPUT_DEBOUNCE_MS / sampleBoilerInput()).
+// boilerInputState is the reported (debounced) value; boilerInputLastRaw and
+// boilerInputStableSinceMs track how long the raw pin has held its current level.
+// boilerInputInit adopts the very first raw sample without waiting for the window.
+static bool boilerInputState = false;
+static bool boilerInputLastRaw = false;
+static uint32_t boilerInputStableSinceMs = 0;
+static bool boilerInputInit = false;
 
 // Morning gate state: when PV voltage first crossed BOILER_MORNING_PV_V today
 // and whether it is currently above it. pvInit guards the first reading after
@@ -235,10 +253,33 @@ static void autoRegulate(uint32_t now) {
   }
 }
 
+// Sample the raw BOILER_ON_PIN and update the debounced boilerInputState. Called
+// once per loop from tickBoiler(), so the cache stays fresh for all isBoilerOn()
+// callers (which run in the same loop thread).
+static void sampleBoilerInput(uint32_t now) {
+  bool raw = (digitalRead(BOILER_ON_PIN) == LOW);  // LOW = on
+  if (raw != boilerInputLastRaw) {
+    boilerInputLastRaw = raw;
+    boilerInputStableSinceMs = now;  // raw just changed — restart the stability timer
+  }
+  if (!boilerInputInit) {
+    boilerInputState = raw;  // adopt the first sample after boot immediately
+    boilerInputInit = true;
+  } else if (raw != boilerInputState &&
+             (now - boilerInputStableSinceMs) >= BOILER_INPUT_DEBOUNCE_MS) {
+    boilerInputState = raw;  // raw held its new level long enough — commit it
+  }
+}
+
+bool isBoilerOn() {
+  return boilerInputState;
+}
+
 void tickBoiler() {
   if (boilerFault) return;
 
   uint32_t now = millis();
+  sampleBoilerInput(now);
 
   // Mains absent at A.COM (no heating possible, no AC for the opto to detect) or
   // inverter data stale/lost (comms down for several consecutive polls) — force
