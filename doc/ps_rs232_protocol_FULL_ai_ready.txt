@@ -14,6 +14,15 @@ Serial port:
 - Parity: N (None)
 - Stop bits: 1
 
+RJ45-to-DB9 cable pinout (from device manual, "RJ45 to RS232 cable between computer and device"):
+P1 = RJ45 (device side), P2 = DB9 male (computer side).
+
+  RJ45 (P1) | wire color      | DB9 (P2) | function (device perspective)
+  ----------+-----------------+----------+------------------------------
+  1         | white & orange  | 2        | TXD (device transmits)
+  2         | blue            | 3        | RXD (device receives)
+  8         | white & green   | 5        | GND
+
 ============================================================
 2) GENERIC FRAMING RULES
 ============================================================
