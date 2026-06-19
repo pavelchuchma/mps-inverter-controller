@@ -39,7 +39,10 @@ static constexpr int BOILER_OVERLOAD_W = 5000;
 static constexpr uint32_t BOILER_OVERLOAD_OFF_MS = INVERTER_POLL_INTERVAL_MS + 1000;
 // Conditions under which a step up is allowed (PV surplus is plausible).
 static constexpr int BOILER_RAISE_MIN_SOC = 70;         // battery SOC [%]
-static constexpr float BOILER_RAISE_MIN_PV_V = 350.0f;  // PV input voltage [V]
+// PV input voltage marking plausible surplus [V]. Kept below the no-load MPP so
+// the boiler can still bootstrap (OFF->500W) on hot days, when a high cell
+// temperature depresses panel voltage into the ~330 V range even in good sun.
+static constexpr float BOILER_RAISE_MIN_PV_V = 325.0f;
 // Minimum time between successive step-ups during normal operation.
 static constexpr uint32_t BOILER_RAISE_INTERVAL_MS = 15UL * 60 * 1000;  // 15 min
 // Morning gate: in weak morning sun SOC and PV voltage both read "good" while the
