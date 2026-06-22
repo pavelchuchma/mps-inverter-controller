@@ -294,10 +294,14 @@ bool isBoilerOn() {
 }
 
 void tickBoiler() {
-  if (boilerFault) return;
-
+  // Sample the boiler input before the fault short-circuit below, so the
+  // reported isBoilerOn() keeps tracking the real pin even while faulted.
+  // Otherwise a latched fault would freeze the metric at its pre-fault value
+  // until reboot (reported "on" stays stale the whole time the fault is set).
   uint32_t now = millis();
   sampleBoilerInput(now);
+
+  if (boilerFault) return;
 
   // Mains absent at A.COM (no heating possible, no AC for the opto to detect) or
   // inverter data stale/lost (comms down for several consecutive polls) — force
