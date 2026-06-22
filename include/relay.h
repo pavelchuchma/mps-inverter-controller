@@ -32,10 +32,11 @@
 // Physical B verification: an opto-isolated AC voltage detector wired
 // across B's NO contact (between node Y and N) reports whether B has
 // physically energized. tickBoiler() consults it on every settled tick
-// where the *current* state has commanded B=1 (1000 W or 2000 W). On
-// mismatch (commanded B=1 but sensor reads "hot" = N is at Z, not Y),
-// the controller calls emergencyShutdown(): drives A=0, B=0, C=0 in
-// that order, sets a sticky boilerFault flag. Once faulted,
+// where the *current* state has commanded B=1 (1000 W or 2000 W). On a
+// mismatch (commanded B=1 but sensor reads "hot" = N is at Z, not Y) that
+// persists past a short debounce window (a brief glitch on the high-impedance
+// GPIO36 opto is ignored), the controller calls emergencyShutdown(): drives
+// A=0, B=0, C=0 in that order, sets a sticky boilerFault flag. Once faulted,
 // setBoilerPower() and tickBoiler() are no-ops until reboot.
 
 enum BoilerPower : uint8_t {

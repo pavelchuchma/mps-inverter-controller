@@ -16,7 +16,7 @@ static constexpr uint8_t STATE_BITS[4] = {
 };
 
 static constexpr uint16_t RELAY_SETTLE_MS = 30;  // spec ≥ 30 ms
-static constexpr uint16_t B_VERIFY_TIMEOUT_MS = 1000;  // opto + RC filter can be slow
+static constexpr uint16_t RELAY_B_VERIFY_TIMEOUT_MS = 1000;  // opto + RC filter can be slow
 
 // The boiler must heat only from PV surplus, never from the battery (it is
 // small and would drain quickly). Any battery discharge above this current [A]
@@ -67,6 +67,16 @@ static constexpr uint32_t BOILER_MORNING_REARM_MS = 60UL * 60 * 1000;  // 1 h
 // enough to swamp any plausible glitch. See sampleBoilerInput().
 static constexpr uint32_t BOILER_INPUT_DEBOUNCE_MS = 200;
 
+// The B-verify opto on GPIO36 (input-only, no internal pull-up, reading AC) can
+// momentarily read LOW on a noise glitch or an AC zero-crossing notch. An
+// un-debounced single LOW read tripped the sticky boilerFault, requiring a reboot.
+// Require the commanded-ON-but-reads-OFF mismatch to persist this long before
+// faulting. Any verified-ON read in between clears the timer (a genuinely
+// stuck-open B reads LOW continuously and still faults within this window). Long
+// enough to swamp several AC half-cycles, negligible vs. the 15-min step cadence.
+// See tickBoiler().
+static constexpr uint32_t BOILER_RELAY_B_VERIFY_DEBOUNCE_MS = 200;
+
 // volatile: currentPower may be read from another FreeRTOS task
 // (inverter control). 1-byte enum reads are atomic on Xtensa.
 static volatile BoilerPower currentPower = BOILER_OFF;
@@ -77,8 +87,13 @@ static uint32_t lastStepMs = 0;
 // opto-isolated verifier confirms B physically closed. Without this gate
 // a slow opto filter could let C move while B is still mechanically open
 // → L–N short through C's transition arc.
-static bool waitingForBVerify = false;
-static uint32_t bVerifyStartMs = 0;
+static bool waitingForRelayBVerify = false;
+static uint32_t relayBVerifyStartMs = 0;
+
+// When the steady-state B mismatch (commanded ON, sensor reads OFF) first
+// appeared. 0 = currently no mismatch. Debounces emergencyShutdown() so a brief
+// glitch on GPIO36 does not trip the sticky fault (see BOILER_RELAY_B_VERIFY_DEBOUNCE_MS).
+static uint32_t relayBMismatchSinceMs = 0;
 
 // Tracks how long the battery has been continuously discharging, so the boiler
 // is only stepped down after BOILER_DISCHARGE_OFF_MS of sustained discharge.
@@ -116,7 +131,7 @@ static uint32_t pvBelowSinceMs = 0;  // when PV first dropped below 300 V (0 = a
 static volatile bool boilerFault = false;
 static const char* boilerFaultReason = nullptr;  // static-string only
 
-static inline bool isCommandedBHigh(BoilerPower p) {
+static inline bool isCommandedRelayBHigh(BoilerPower p) {
   return STATE_BITS[p] & 0b010;
 }
 
@@ -160,7 +175,7 @@ void boilerRelayInit() {
   targetPower = BOILER_OFF;
   lastStepMs = millis();
   lastPowerChangeMs = millis();
-  waitingForBVerify = false;
+  waitingForRelayBVerify = false;
 }
 
 // Set the commanded power target, logging the change (with reason) to the app
@@ -295,26 +310,36 @@ void tickBoiler() {
     // Cancel any in-flight B-verify wait and steer the chain back to OFF
     // (falls through to the settle/step block). Reset the auto trackers so we
     // do not act on stale timing when normal operation resumes.
-    waitingForBVerify = false;
+    waitingForRelayBVerify = false;
     setBoilerTarget(BOILER_OFF, forceOffReason);
     overloading = false;
     battDischarging = false;
-  } else if (waitingForBVerify) {
+    relayBMismatchSinceMs = 0;
+  } else if (waitingForRelayBVerify) {
     // Block all stepping (especially the 1000→2000 C-toggle) until the
     // opto confirms B physically closed. Fault if it doesn't within 1s.
     if (isRelayBoilerBVerifiedOn()) {
-      waitingForBVerify = false;
-    } else if ((now - bVerifyStartMs) >= B_VERIFY_TIMEOUT_MS) {
+      waitingForRelayBVerify = false;
+    } else if ((now - relayBVerifyStartMs) >= RELAY_B_VERIFY_TIMEOUT_MS) {
       emergencyShutdown("Relay B did not verify within 1s after closing");
     }
     return;
-  } else if (isCommandedBHigh(currentPower) && !isRelayBoilerBVerifiedOn()) {
+  } else if (isCommandedRelayBHigh(currentPower) && !isRelayBoilerBVerifiedOn()) {
     // Steady-state monitoring: B was previously verified ON (the wait
-    // phase above only exits on a HIGH read) and has now dropped.
-    emergencyShutdown("Relay B mismatch: commanded ON, sensor reads OFF");
+    // phase above only exits on a HIGH read) and has now dropped. Debounce:
+    // tolerate brief glitches on the high-impedance GPIO36 opto and fault only
+    // if the mismatch persists (see BOILER_RELAY_B_VERIFY_DEBOUNCE_MS). Returning here
+    // also blocks all stepping while a mismatch is pending, so no C-toggle can
+    // occur with B open.
+    if (relayBMismatchSinceMs == 0) relayBMismatchSinceMs = now;
+    if (now - relayBMismatchSinceMs >= BOILER_RELAY_B_VERIFY_DEBOUNCE_MS) {
+      emergencyShutdown("Relay B mismatch: commanded ON, sensor reads OFF");
+    }
     return;
   } else {
-    // Normal operation: adjust the target from inverter state.
+    // Normal operation: B verified (or not commanded ON) — clear the mismatch
+    // debounce and adjust the target from inverter state.
+    relayBMismatchSinceMs = 0;
     autoRegulate(now);
   }
 
@@ -327,16 +352,16 @@ void tickBoiler() {
   uint8_t nextRank = (uint8_t)currentPower + step;
 
   // Detect "this step closes B" (only the 500W→1000W edge on the chain).
-  bool willCloseB = !isCommandedBHigh(currentPower) &&
+  bool willCloseRelayB = !isCommandedRelayBHigh(currentPower) &&
                     (STATE_BITS[nextRank] & 0b010);
 
   writeBits(STATE_BITS[nextRank]);
   currentPower = (BoilerPower)nextRank;
   lastStepMs = now;
 
-  if (willCloseB) {
-    waitingForBVerify = true;
-    bVerifyStartMs = now;
+  if (willCloseRelayB) {
+    waitingForRelayBVerify = true;
+    relayBVerifyStartMs = now;
   }
 }
 
