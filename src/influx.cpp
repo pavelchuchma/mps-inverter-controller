@@ -11,6 +11,7 @@
 #include "config.h"
 #include "credentials.h"
 #include "inverter_comm.h"
+#include "pylontech_comm.h"
 #include "phone.h"
 #include "relay.h"
 #include "utils.h"
@@ -92,6 +93,34 @@ static void append_sample(String& buf, time_t ts) {
       char ms[2] = {mode_code, '\0'};
       appendStr(line, first, "mode", ms);
     }
+    if (!first) {
+      line += tsbuf;
+      buf += line;
+    }
+  }
+
+  // chajda-battery — Pylontech pack status; only when valid, so offline periods
+  // leave gaps in Grafana instead of zeros (same rationale as chajda-inverter).
+  PylontechState bat = {};
+  pylontech_get_status(&bat);
+  if (g_pylontech_data_valid) {
+    String line = "chajda-battery ";
+    bool first = true;
+    appendFloat(line, first, "voltage_v", bat.voltage);
+    appendFloat(line, first, "current_a", bat.current);
+    appendInt(line, first, "power_w", (long)(bat.voltage * bat.current));
+    appendFloat(line, first, "temp_c", bat.temperature);
+    appendInt(line, first, "soc", bat.soc);
+    appendFloat(line, first, "max_voltage_v", bat.max_voltage);
+    appendInt(line, first, "charge_times", bat.charge_times);
+    appendBool(line, first, "cfet", bat.cfet_on);
+    appendBool(line, first, "dfet", bat.dfet_on);
+    appendBool(line, first, "heater", bat.heater_on);
+    appendStr(line, first, "status", bat.basic_status);
+    appendInt(line, first, "bat_events", (long)bat.bat_events);
+    appendInt(line, first, "power_events", (long)bat.power_events);
+    appendInt(line, first, "system_fault", (long)bat.system_fault);
+    appendInt(line, first, "system_alarm", (long)bat.system_alarm);
     if (!first) {
       line += tsbuf;
       buf += line;

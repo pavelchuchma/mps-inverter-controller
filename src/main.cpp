@@ -9,6 +9,7 @@
 #include "esp_webserver.h"
 #include "display.h"
 #include "inverter_comm.h"
+#include "pylontech_comm.h"
 #include "phone.h"
 #include "phone_charger.h"
 #include "influx.h"
@@ -206,6 +207,9 @@ void setup() {
 
   // Initialize inverter RS232 communication (background task)
    inverter_comm_init(INVERTER_RX_PIN, INVERTER_TX_PIN);
+
+  // Initialize Pylontech battery console communication (background task)
+  pylontech_comm_init(BATTERY_RX_PIN, BATTERY_TX_PIN);
 
   // Start polling phone status endpoint (background task, 30s interval)
   phone_comm_init();
