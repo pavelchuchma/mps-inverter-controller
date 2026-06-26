@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inverter settings</title>
+  <link rel="stylesheet" href="./style.css">
+  <style>
+    h2{margin:0 0 12px;font-size:20px;}
+    .tbl-wrap{overflow-x:auto;background:#fff;border:1px solid #e6e8ee;border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.04);}
+    table{border-collapse:collapse;width:100%;font-size:14px;}
+    th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #eef0f4;vertical-align:top;}
+    th{background:#f0f2f6;font-size:12px;position:sticky;top:0;}
+    td.id{font-variant-numeric:tabular-nums;opacity:.6;width:2.5em;}
+    td.note{font-size:12px;opacity:.7;}
+    tr.mismatch{background:#fff3f3;}
+    tr.match{background:#f3fbf3;}
+    .toolbar{display:flex;gap:10px;align-items:center;margin:0 0 12px;flex-wrap:wrap;}
+  </style>
+</head>
+<body>
+  <h2>Nastavení měniče (čteno přes RS232)</h2>
+  <div class="toolbar">
+    <span id="status" class="pill">…</span>
+    <button id="refresh">Refresh</button>
+    <a href="/">← zpět</a>
+  </div>
+
+  <div class="tbl-wrap">
+    <table id="tbl">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Jméno</th>
+          <th>Očekáváno (manuál)</th>
+          <th>Přečteno (měnič)</th>
+          <th>Poznámka</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="muted" style="margin-top:14px;">Raw payloady (pro ověření pořadí tokenů):</div>
+  <pre id="raw">—</pre>
+
+  <script src="./settings.js" defer></script>
+</body>
+</html>

@@ -56,3 +56,9 @@ bool inverter_data_valid();
 // Thread-safe read of the latest battery discharge current [A].
 float inverter_batt_discharge_current();
 bool inverter_get_mode(char* out_code, char* out_name, size_t name_cap);
+
+// Send an arbitrary command (e.g. "QPIRI", "QFLAG") synchronously and return the
+// response payload (contents inside '(' .. , without frame/CRC). Blocks up to ~1s
+// and is serialized against the background poll task. Returns false on
+// timeout/CRC mismatch. Intended for on-demand reads, not periodic polling.
+bool inverter_query_raw(const char* cmd, String& out_payload);

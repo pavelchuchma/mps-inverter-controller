@@ -2,6 +2,10 @@
 #include <HardwareSerial.h>
 
 static SemaphoreHandle_t g_inv_mutex = NULL;
+// Serializes raw access to Serial1 (TX+RX) between the background poll task and
+// on-demand queries issued from the web handler. g_inv_mutex above only guards
+// the parsed state, not the serial line itself.
+static SemaphoreHandle_t g_inv_serial_mutex = NULL;
 
 InverterState g_inverter_status = { 0 };
 bool g_inverter_data_valid = false;
@@ -115,6 +119,10 @@ static bool send_command_and_get_payload(const String& cmd, String& out_payload)
   size_t tx_len = 0;
   build_frame(cmd, tx, tx_len);
 
+  // Serialize the whole TX+RX exchange so background polling and on-demand
+  // queries never interleave bytes on the shared Serial1 line.
+  if (g_inv_serial_mutex) xSemaphoreTake(g_inv_serial_mutex, portMAX_DELAY);
+
   // Flush RX and TX buffers
   while (ser.available()) ser.read();
   ser.write(tx, tx_len);
@@ -123,6 +131,9 @@ static bool send_command_and_get_payload(const String& cmd, String& out_payload)
   // Wait for response up to 1000ms
   uint8_t rx[512];
   size_t rx_len = read_until_cr(ser, rx, sizeof(rx), 1000);
+
+  if (g_inv_serial_mutex) xSemaphoreGive(g_inv_serial_mutex);
+
   if (rx_len == 0) {
     Serial.printf("[INV] No response for cmd '%s'\n", cmd.c_str());
     return false;
@@ -324,6 +335,9 @@ void inverter_comm_init(int rx_pin, int tx_pin) {
   if (!g_inv_mutex) {
     g_inv_mutex = xSemaphoreCreateMutex();
   }
+  if (!g_inv_serial_mutex) {
+    g_inv_serial_mutex = xSemaphoreCreateMutex();
+  }
   // Initialize Serial1 for RS232 via MAX3232 at 2400 8N1
   Serial1.begin(2400, SERIAL_8N1, rx_pin, tx_pin);
 
@@ -360,6 +374,13 @@ float inverter_batt_discharge_current() {
   v = g_inverter_status.batt_discharge_current;
   if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
   return v;
+}
+
+bool inverter_query_raw(const char* cmd, String& out_payload) {
+  if (!cmd) return false;
+  // Synchronous, on-demand query (e.g. QPIRI/QFLAG from the web handler).
+  // Blocks up to ~1s while serialized against the background poll task.
+  return send_command_and_get_payload(String(cmd), out_payload);
 }
 
 bool inverter_get_mode(char* out_code, char* out_name, size_t name_cap) {

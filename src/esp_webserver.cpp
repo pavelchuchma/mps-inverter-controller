@@ -200,6 +200,33 @@ static void handleStatus() {
   server.send(200, "application/json", s);
 }
 
+// --------- Inverter configuration read-back (on-demand) ---------
+// Queries QPIRI/QFLAG/QMOD over RS232 right now and returns the raw payloads.
+// All parsing/mapping to the manual is done client-side (data/settings.js), so
+// the mapping can be tweaked by re-uploading web files without reflashing.
+// Each query blocks up to ~1s, so this handler can take a couple of seconds.
+static void handleInvConfig() {
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  server.sendHeader("Pragma", "no-cache");
+  server.sendHeader("Expires", "-1");
+
+  JsonDocument doc;
+  String qpiri, qflag, qmod;
+  bool ok_qpiri = inverter_query_raw("QPIRI", qpiri);
+  bool ok_qflag = inverter_query_raw("QFLAG", qflag);
+  bool ok_qmod  = inverter_query_raw("QMOD", qmod);
+
+  doc["ok"] = ok_qpiri && ok_qflag;
+  doc["qpiri"] = ok_qpiri ? qpiri : String();
+  doc["qflag"] = ok_qflag ? qflag : String();
+  doc["qmod"]  = ok_qmod ? qmod : String();
+  doc["ts"] = millis();
+
+  String out;
+  serializeJson(doc, out);
+  server.send(200, "application/json", out);
+}
+
 static void handleCmdHttp() {
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", makeErrJson("bad_request", "Missing body"));
@@ -275,6 +302,7 @@ static void handleUploadData() {
 void webserver_setup_routes() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/status", HTTP_GET, handleStatus);
+  server.on("/inv_config", HTTP_GET, handleInvConfig);
   server.on("/cmd", HTTP_POST, handleCmdHttp);
   server.on("/phone_battery", HTTP_POST, handlePhoneBattery);
   server.on("/upload", HTTP_GET, handleUploadPage);
