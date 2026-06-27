@@ -211,20 +211,91 @@ static void handleInvConfig() {
   server.sendHeader("Expires", "-1");
 
   JsonDocument doc;
-  String qpiri, qflag, qmod;
+  String qpiri, qflag, qmod, qmchgcr;
   bool ok_qpiri = inverter_query_raw("QPIRI", qpiri);
   bool ok_qflag = inverter_query_raw("QFLAG", qflag);
   bool ok_qmod  = inverter_query_raw("QMOD", qmod);
+  // Selectable max-charging-current values; used by the UI to offer valid
+  // choices for the editable "max charging current" field. Best-effort.
+  bool ok_qmchgcr = inverter_query_raw("QMCHGCR", qmchgcr);
 
   doc["ok"] = ok_qpiri && ok_qflag;
   doc["qpiri"] = ok_qpiri ? qpiri : String();
   doc["qflag"] = ok_qflag ? qflag : String();
   doc["qmod"]  = ok_qmod ? qmod : String();
+  doc["qmchgcr"] = ok_qmchgcr ? qmchgcr : String();
   doc["ts"] = millis();
 
   String out;
   serializeJson(doc, out);
   server.send(200, "application/json", out);
+}
+
+// Allowlisted write-command prefixes for /inv_set. Only configuration writes the
+// settings page is allowed to issue — nothing else can be sent to the inverter.
+static const char* const INV_SET_ALLOWED[] = {
+  "MCHGC", "PBCV", "PBDV", "PCVV", "PBFT", "PSDV"
+};
+
+// Validate a write command: prefix must be allowlisted and the value part may
+// contain only digits and '.', with the whole command kept short.
+static bool invSetCmdAllowed(const String& cmd) {
+  if (cmd.length() < 4 || cmd.length() > 12) return false;
+  const char* prefix = nullptr;
+  for (const char* p : INV_SET_ALLOWED) {
+    if (cmd.startsWith(p)) { prefix = p; break; }
+  }
+  if (!prefix) return false;
+  for (size_t i = strlen(prefix); i < cmd.length(); ++i) {
+    char c = cmd[i];
+    if (!((c >= '0' && c <= '9') || c == '.')) return false;
+  }
+  return cmd.length() > strlen(prefix); // must carry a value
+}
+
+// --------- Inverter configuration write (on-demand) ---------
+// Body: { "cmds": ["PCVV56.4", "PBFT54.5", ...] }
+// Each command is allowlist-validated, then sent over RS232; ACK means applied.
+static void handleInvSet() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", makeErrJson("bad_request", "Missing body"));
+    return;
+  }
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, server.arg("plain"));
+  if (err) {
+    server.send(400, "application/json", makeErrJson("json_parse", err.c_str()));
+    return;
+  }
+  JsonArray cmds = doc["cmds"].as<JsonArray>();
+  if (cmds.isNull() || cmds.size() == 0) {
+    server.send(400, "application/json", makeErrJson("bad_request", "Missing 'cmds'"));
+    return;
+  }
+
+  JsonDocument out;
+  JsonArray results = out["results"].to<JsonArray>();
+  for (JsonVariant v : cmds) {
+    String cmd = v.as<String>();
+    JsonObject r = results.add<JsonObject>();
+    r["cmd"] = cmd;
+    if (!invSetCmdAllowed(cmd)) {
+      r["ok"] = false;
+      r["resp"] = "REJECTED";
+      Serial.printf("[INV_SET] rejected: %s\n", cmd.c_str());
+      continue;
+    }
+    String resp;
+    bool sent = inverter_query_raw(cmd.c_str(), resp);
+    bool ack = sent && resp == "ACK";
+    r["ok"] = ack;
+    r["resp"] = sent ? resp : String("NO_RESPONSE");
+    printInfo("Inverter write %s -> %s", cmd.c_str(), ack ? "ACK" : (sent ? resp.c_str() : "NO_RESPONSE"));
+  }
+
+  String body;
+  serializeJson(out, body);
+  server.send(200, "application/json", body);
 }
 
 static void handleCmdHttp() {
@@ -303,6 +374,7 @@ void webserver_setup_routes() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/status", HTTP_GET, handleStatus);
   server.on("/inv_config", HTTP_GET, handleInvConfig);
+  server.on("/inv_set", HTTP_POST, handleInvSet);
   server.on("/cmd", HTTP_POST, handleCmdHttp);
   server.on("/phone_battery", HTTP_POST, handlePhoneBattery);
   server.on("/upload", HTTP_GET, handleUploadPage);

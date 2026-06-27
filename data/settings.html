@@ -15,7 +15,10 @@
     td.note{font-size:12px;opacity:.7;}
     tr.mismatch{background:#fff3f3;}
     tr.match{background:#f3fbf3;}
+    .edit{padding:4px 6px;font-size:14px;border:1px solid #cbd5e1;border-radius:8px;}
+    input.edit{width:5em;}
     .toolbar{display:flex;gap:10px;align-items:center;margin:0 0 12px;flex-wrap:wrap;}
+    #update{background:#fee2e2;border-color:#fca5a5;font-weight:600;}
   </style>
 </head>
 <body>
@@ -34,11 +37,17 @@
           <th>Jméno</th>
           <th>Očekáváno (manuál)</th>
           <th>Přečteno (měnič)</th>
+          <th>Nová hodnota</th>
           <th>Poznámka</th>
         </tr>
       </thead>
       <tbody></tbody>
     </table>
+  </div>
+
+  <div class="toolbar" style="margin-top:12px;">
+    <button id="update">Update settings</button>
+    <span class="muted">Zapíše jen změněná pole, po potvrzení.</span>
   </div>
 
   <div class="muted" style="margin-top:14px;">Raw payloady (pro ověření pořadí tokenů):</div>
