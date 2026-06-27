@@ -11,8 +11,7 @@
 #define PYLONTECH_CMD "pwr 1\r"          // command terminated with CR
 
 // Response collection timing
-#define PYLONTECH_READ_WINDOW_MS 2000  // total time to collect a response
-#define PYLONTECH_IDLE_GAP_MS 300      // stop after this gap once data started
+#define PYLONTECH_READ_WINDOW_MS 2000  // max time to wait for the end sentinel
 
 // Consecutive failed poll cycles tolerated before battery data is marked
 // invalid. Occasional single dropouts are acceptable and must not invalidate.

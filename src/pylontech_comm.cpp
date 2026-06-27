@@ -6,10 +6,12 @@ static SemaphoreHandle_t g_pylon_mutex = NULL;
 PylontechState g_pylontech_status = {};
 bool g_pylontech_data_valid = false;
 
-// Send the 'pwr' command and collect the raw console response into `resp`.
-// Stops early on the console end sentinel ("$$" prompt or the completion line),
-// otherwise on an idle gap once data started, or when the read window expires.
-// Returns true if any bytes were received.
+// Send the 'pwr' command and collect the full console response into `resp`.
+// Returns true ONLY if the end-of-response sentinel arrived, which guarantees a
+// complete frame. We deliberately do NOT stop on an idle gap: the console can
+// pause mid-frame, and an early stop would truncate the response — the parser
+// would then publish zero-defaulted fields. Returning false on a truncated or
+// missing response lets the caller keep the last good values instead.
 static bool pylontech_collect_response(String& resp) {
   // Flush TX and discard any stale RX bytes before issuing the command.
   Serial2.flush();
@@ -19,26 +21,22 @@ static bool pylontech_collect_response(String& resp) {
 
   resp = "";
   unsigned long start = millis();
-  unsigned long last_rx = 0;
-  bool got_any = false;
 
   while (millis() - start < PYLONTECH_READ_WINDOW_MS) {
     if (Serial2.available()) {
       int b = Serial2.read();
       if (b < 0) continue;
       resp += (char)b;
-      got_any = true;
-      last_rx = millis();
-      // End-of-response sentinels: console prompt or completion line.
-      if (resp.endsWith("$$") || resp.indexOf("Command completed successfully") >= 0) break;
+      // End-of-response sentinels: completion line or console prompt.
+      if (resp.indexOf("Command completed successfully") >= 0 || resp.endsWith("$$")) {
+        return true;
+      }
     } else {
-      // Stop early once a quiet gap follows received data.
-      if (got_any && (millis() - last_rx >= PYLONTECH_IDLE_GAP_MS)) break;
       vTaskDelay(pdMS_TO_TICKS(2));
     }
   }
 
-  return got_any;
+  return false;  // window expired without the sentinel: incomplete response
 }
 
 // Trim leading/trailing ASCII whitespace from a String (in place copy).
@@ -48,9 +46,10 @@ static String trim_copy(const String& s) {
   return t;
 }
 
-// Parse the 'pwr' console response into `out`. Returns true only when a core set
-// of fields parsed (voltage and SoC seen), so a partial/garbled response leaves
-// the last good values untouched.
+// Parse the 'pwr' console response into `out`. The caller only passes complete
+// frames (pylontech_collect_response returns true only on the end sentinel), so
+// every field is present here; voltage and SoC are checked as a cheap sanity
+// guard against a sentinel-terminated but data-less response.
 static bool parse_pwr_payload(const String& resp, PylontechState& out) {
   PylontechState s = {};
   bool saw_voltage = false;
