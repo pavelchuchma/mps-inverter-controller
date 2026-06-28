@@ -96,6 +96,29 @@ void printWarning(const char* fmt, ...) {
   va_end(ap);
 }
 
+void printWarningBlock(const char* header, const String& body) {
+  char tbuf[24];
+  formatLogTimestamp(tbuf, sizeof(tbuf));
+  char head[440];
+  snprintf(head, sizeof(head), "[%s] [WARN] %s\n", tbuf, header);
+  Serial.print(head);
+  Serial.print(body);
+  if (body.length() == 0 || body[body.length() - 1] != '\n') Serial.print('\n');
+  if (LittleFS.begin()) {
+    File f = LittleFS.open("/app.log", "a");
+    if (f) {
+      f.print(head);
+      f.print(body);  // single append, no fixed-size buffer: never truncated
+      if (body.length() == 0 || body[body.length() - 1] != '\n') f.print('\n');
+      size_t after = f.size();
+      f.close();
+      if (after > LOG_MAX_BYTES) {
+        rotateAppLog();
+      }
+    }
+  }
+}
+
 void printInfo(const char* fmt, ...) {
   va_list ap;
   va_start(ap, fmt);

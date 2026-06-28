@@ -1,5 +1,7 @@
 #include "pylontech_comm.h"
+#include "utils.h"
 #include <HardwareSerial.h>
+#include <ctype.h>
 
 static SemaphoreHandle_t g_pylon_mutex = NULL;
 
@@ -46,14 +48,57 @@ static String trim_copy(const String& s) {
   return t;
 }
 
+// True only for a clean integer token: optional leading '-' then one or more
+// ASCII digits. A serial glitch that drops digits leaves a non-numeric token
+// (e.g. "mV"), which String::toInt() would silently turn into 0.
+static bool is_int_token(const String& v) {
+  if (v.length() == 0) return false;
+  int i = 0;
+  if (v[0] == '-') {
+    if (v.length() == 1) return false;
+    i = 1;
+  }
+  for (; i < (int)v.length(); ++i) {
+    if (!isdigit((unsigned char)v[i])) return false;
+  }
+  return true;
+}
+
 // Parse the 'pwr' console response into `out`. The caller only passes complete
-// frames (pylontech_collect_response returns true only on the end sentinel), so
-// every field is present here; voltage and SoC are checked as a cheap sanity
-// guard against a sentinel-terminated but data-less response.
+// frames (pylontech_collect_response returns true only on the end sentinel).
+// Each core numeric field is validated: its token must be a clean integer and,
+// where a zero/garbage value is physically impossible, within a plausible
+// range. A single corrupted field rejects the whole frame so the caller keeps
+// the last good values instead of publishing a bogus zero to InfluxDB.
 static bool parse_pwr_payload(const String& resp, PylontechState& out) {
   PylontechState s = {};
   bool saw_voltage = false;
   bool saw_soc = false;
+
+  // First corrupted field in this frame (for the rejection log), if any.
+  bool frame_bad = false;
+  String bad_label;
+  String bad_value;
+  auto reject = [&](const String& lbl, const String& val) {
+    if (!frame_bad) {
+      frame_bad = true;
+      bad_label = lbl;
+      bad_value = val;
+    }
+  };
+  // Validate a clean integer in [lo, hi]; on failure mark the frame bad.
+  auto num_ok = [&](const String& lbl, const String& val, long lo, long hi, long& outv) -> bool {
+    if (!is_int_token(val)) { reject(lbl, val); return false; }
+    long n = val.toInt();
+    if (n < lo || n > hi) { reject(lbl, val); return false; }
+    outv = n;
+    return true;
+  };
+  // Validate a clean integer with no range constraint (signed/wide values).
+  auto tok_ok = [&](const String& lbl, const String& val) -> bool {
+    if (!is_int_token(val)) { reject(lbl, val); return false; }
+    return true;
+  };
 
   int pos = 0;
   int len = resp.length();
@@ -84,26 +129,31 @@ static bool parse_pwr_payload(const String& resp, PylontechState& out) {
     int sp = rhs.indexOf(' ');
     String value = (sp < 0) ? rhs : rhs.substring(0, sp);
 
+    long n;
     if (label == "CFetState") {
       s.cfet_on = (rhs == "ON");
     } else if (label == "DFetState") {
       s.dfet_on = (rhs == "ON");
     } else if (label == "Voltage") {
-      s.voltage = value.toInt() / 1000.0f;
-      saw_voltage = true;
+      if (num_ok(label, value, 40000, 60000, n)) {
+        s.voltage = n / 1000.0f;
+        saw_voltage = true;
+      }
     } else if (label == "Current") {
-      s.current = value.toInt() / 1000.0f;
+      if (tok_ok(label, value)) s.current = value.toInt() / 1000.0f;
     } else if (label == "Temperature") {
-      s.temperature = value.toInt() / 1000.0f;
+      if (num_ok(label, value, -30000, 80000, n)) s.temperature = n / 1000.0f;
     } else if (label == "Coulomb") {
-      s.soc = value.toInt();
-      saw_soc = true;
+      if (num_ok(label, value, 0, 100, n)) {
+        s.soc = n;
+        saw_soc = true;
+      }
     } else if (label == "Total Coulomb") {
-      s.total_capacity_mah = value.toInt();
+      if (tok_ok(label, value)) s.total_capacity_mah = value.toInt();
     } else if (label == "Max Voltage") {
-      s.max_voltage = value.toInt() / 1000.0f;
+      if (num_ok(label, value, 45000, 60000, n)) s.max_voltage = n / 1000.0f;
     } else if (label == "Charge Times") {
-      s.charge_times = value.toInt();
+      if (tok_ok(label, value)) s.charge_times = value.toInt();
     } else if (label == "Basic Status") {
       strncpy(s.basic_status, value.c_str(), sizeof(s.basic_status) - 1);
       s.basic_status[sizeof(s.basic_status) - 1] = '\0';
@@ -119,6 +169,19 @@ static bool parse_pwr_payload(const String& resp, PylontechState& out) {
       s.system_alarm = strtoul(value.c_str(), NULL, 16);
     }
     // Protect ENA and the "*. Status: Normal" lines are intentionally ignored.
+  }
+
+  // A corrupted core field: log the offending field plus the whole raw frame to
+  // the persistent app log (for diagnostics) and reject. This only runs on a
+  // sentinel-terminated frame, so a downed line (no sentinel, parser not called)
+  // cannot flood the log.
+  if (frame_bad) {
+    char hdr[160];
+    snprintf(hdr, sizeof(hdr),
+             "[BAT] rejected frame: bad field \"%s\" value \"%s\"",
+             bad_label.c_str(), bad_value.c_str());
+    printWarningBlock(hdr, resp);
+    return false;
   }
 
   if (!saw_voltage || !saw_soc) return false;  // keep last good values
