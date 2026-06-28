@@ -172,16 +172,14 @@ static bool parse_pwr_payload(const String& resp, PylontechState& out) {
     // Protect ENA and the "*. Status: Normal" lines are intentionally ignored.
   }
 
-  // A corrupted core field: log the offending field plus the whole raw frame to
-  // the persistent app log (for diagnostics) and reject. This only runs on a
-  // sentinel-terminated frame, so a downed line (no sentinel, parser not called)
-  // cannot flood the log.
+  // A corrupted core field rejects the frame. With consensus re-reads a single
+  // bad frame is expected and self-healing, so this is logged only to Serial
+  // (transient) — not to the persistent app log, which it would otherwise flood.
+  // A genuine failure (no consensus across the whole cycle) is persisted once by
+  // the caller instead.
   if (frame_bad) {
-    char hdr[160];
-    snprintf(hdr, sizeof(hdr),
-             "[BAT] rejected frame: bad field \"%s\" value \"%s\"",
-             bad_label.c_str(), bad_value.c_str());
-    printWarningBlock(hdr, resp);
+    Serial.printf("[BAT] rejected frame: bad field \"%s\" value \"%s\"\n",
+                  bad_label.c_str(), bad_value.c_str());
     return false;
   }
 
@@ -272,10 +270,12 @@ static void pylontech_task(void* arg) {
     PylontechState accepted = {};
     PylontechState prev = {};
     int run = 0;
+    int bad_frames = 0;
     bool ok = false;
     for (int attempt = 0; attempt < PYLONTECH_MAX_ATTEMPTS && !ok; ++attempt) {
       PylontechState s;
       if (!pylontech_read_one(s)) {
+        bad_frames++;
         run = 0;  // a missing/corrupt frame breaks the consecutive streak
         continue;
       }
@@ -294,7 +294,9 @@ static void pylontech_task(void* arg) {
       g_pylontech_data_valid = true;
       if (g_pylon_mutex) xSemaphoreGive(g_pylon_mutex);
     } else {
-      Serial.printf("[BAT] no consensus after %d attempts\n", PYLONTECH_MAX_ATTEMPTS);
+      // Whole cycle failed to read the battery: persist one concise line.
+      printWarning("[BAT] no consensus after %d attempts (%d bad frames)",
+                   PYLONTECH_MAX_ATTEMPTS, bad_frames);
       // Tolerate occasional dropouts: invalidate only after N consecutive fails.
       if (consec_fails < PYLONTECH_FAIL_INVALIDATE_THRESHOLD) consec_fails++;
       if (consec_fails >= PYLONTECH_FAIL_INVALIDATE_THRESHOLD) {
