@@ -2,6 +2,7 @@
 #include "utils.h"
 #include <HardwareSerial.h>
 #include <ctype.h>
+#include <math.h>
 
 static SemaphoreHandle_t g_pylon_mutex = NULL;
 
@@ -190,6 +191,44 @@ static bool parse_pwr_payload(const String& resp, PylontechState& out) {
   return true;
 }
 
+// True if two parsed frames represent the same battery state. Analog fields
+// that legitimately jitter between back-to-back reads are compared within a
+// tolerance; everything else (SoC, status, counters, event bitmasks) must match
+// exactly so that a corrupted byte in any of them breaks the consensus.
+static bool states_match(const PylontechState& a, const PylontechState& b) {
+  return a.cfet_on == b.cfet_on
+      && a.dfet_on == b.dfet_on
+      && a.heater_on == b.heater_on
+      && a.pack_index == b.pack_index
+      && a.soc == b.soc
+      && a.total_capacity_mah == b.total_capacity_mah
+      && a.charge_times == b.charge_times
+      && a.bat_events == b.bat_events
+      && a.power_events == b.power_events
+      && a.system_fault == b.system_fault
+      && a.system_alarm == b.system_alarm
+      && strncmp(a.basic_status, b.basic_status, sizeof(a.basic_status)) == 0
+      && fabsf(a.voltage - b.voltage) <= PYLONTECH_VOLTAGE_TOL
+      && fabsf(a.max_voltage - b.max_voltage) <= PYLONTECH_VOLTAGE_TOL
+      && fabsf(a.current - b.current) <= PYLONTECH_CURRENT_TOL
+      && fabsf(a.temperature - b.temperature) <= PYLONTECH_TEMP_TOL;
+}
+
+// Issue 'pwr' once and parse the response into `out`. Returns false on a missing
+// or corrupted frame (both already logged downstream).
+static bool pylontech_read_one(PylontechState& out) {
+  String resp;
+  if (!pylontech_collect_response(resp)) {
+    Serial.println("[BAT] no response from battery console");
+    return false;
+  }
+  if (!parse_pwr_payload(resp, out)) {
+    Serial.println("[BAT] failed to parse pwr response");
+    return false;
+  }
+  return true;
+}
+
 // Print a battery status snapshot to Serial (thread-safe).
 static void print_status_snapshot() {
   PylontechState s;
@@ -222,28 +261,36 @@ static void pylontech_task(void* arg) {
   (void)arg;
   uint8_t consec_fails = 0;
   for (;;) {
-    String resp;
+    // Read 'pwr' back-to-back (no inter-attempt delay) and accept a value only
+    // once PYLONTECH_CONSENSUS_COUNT consecutive frames agree. A failed read or
+    // a value that differs from the previous one resets the streak. Give up
+    // after PYLONTECH_MAX_ATTEMPTS and let the outer cycle retry later.
+    PylontechState accepted = {};
+    PylontechState prev = {};
+    int run = 0;
     bool ok = false;
-    if (pylontech_collect_response(resp)) {
+    for (int attempt = 0; attempt < PYLONTECH_MAX_ATTEMPTS && !ok; ++attempt) {
       PylontechState s;
-      if (parse_pwr_payload(resp, s)) {
-        if (g_pylon_mutex) xSemaphoreTake(g_pylon_mutex, portMAX_DELAY);
-        g_pylontech_status = s;
-        if (g_pylon_mutex) xSemaphoreGive(g_pylon_mutex);
-        ok = true;
-      } else {
-        Serial.println("[BAT] failed to parse pwr response");
+      if (!pylontech_read_one(s)) {
+        run = 0;  // a missing/corrupt frame breaks the consecutive streak
+        continue;
       }
-    } else {
-      Serial.println("[BAT] no response from battery console");
+      run = (run > 0 && states_match(prev, s)) ? run + 1 : 1;
+      prev = s;
+      if (run >= PYLONTECH_CONSENSUS_COUNT) {
+        accepted = s;
+        ok = true;
+      }
     }
 
     if (ok) {
       consec_fails = 0;
       if (g_pylon_mutex) xSemaphoreTake(g_pylon_mutex, portMAX_DELAY);
+      g_pylontech_status = accepted;
       g_pylontech_data_valid = true;
       if (g_pylon_mutex) xSemaphoreGive(g_pylon_mutex);
     } else {
+      Serial.printf("[BAT] no consensus after %d attempts\n", PYLONTECH_MAX_ATTEMPTS);
       // Tolerate occasional dropouts: invalidate only after N consecutive fails.
       if (consec_fails < PYLONTECH_FAIL_INVALIDATE_THRESHOLD) consec_fails++;
       if (consec_fails >= PYLONTECH_FAIL_INVALIDATE_THRESHOLD) {

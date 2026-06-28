@@ -13,6 +13,24 @@
 // Response collection timing
 #define PYLONTECH_READ_WINDOW_MS 2000  // max time to wait for the end sentinel
 
+// Consensus read: over a long noisy RS232 line (~1 bad byte / 10 kB) a single
+// corrupted byte can slip past field validation and skew a value. Each poll
+// cycle issues 'pwr' back-to-back (no delay) and accepts a frame only once
+// PYLONTECH_CONSENSUS_COUNT consecutive frames agree (random corruption will
+// not reproduce identically that many times in a row). After
+// PYLONTECH_MAX_ATTEMPTS reads without consensus the cycle gives up and retries
+// after PYLONTECH_POLL_INTERVAL_MS.
+#define PYLONTECH_CONSENSUS_COUNT 3
+#define PYLONTECH_MAX_ATTEMPTS 10
+
+// Match tolerances for the analog fields that legitimately jitter between
+// back-to-back reads. Voltage is reported to mV and oscillates in the
+// thousandths; current and temperature also drift slightly. Everything else
+// (SoC, status, events, counters) must match exactly.
+#define PYLONTECH_VOLTAGE_TOL 0.02f   // V
+#define PYLONTECH_CURRENT_TOL 0.5f    // A
+#define PYLONTECH_TEMP_TOL 0.2f       // °C
+
 // Consecutive failed poll cycles tolerated before battery data is marked
 // invalid. Occasional single dropouts are acceptable and must not invalidate.
 #define PYLONTECH_FAIL_INVALIDATE_THRESHOLD 3
