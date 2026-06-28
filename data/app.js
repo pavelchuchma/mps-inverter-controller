@@ -152,24 +152,21 @@ async function fetchStatus() {
 
     // /status response uses short keys to minimize GSM payload; see makeStatusJson() in esp_webserver.cpp for the mapping.
     const valid = !!j.iv;
+    const battValid = !!j.bav;
 
     updateTemp("tempH", j.th);
     updateTemp("tempL", j.tl);
     $("ac_out_voltage").textContent = valid && j.av !== undefined && j.av !== null ? Number(j.av).toFixed(1) : "—";
-    $("ac_apparent_va").textContent = valid && j.aa !== undefined && j.aa !== null ? String(Math.round(j.aa)) : "—";
     $("ac_active_w").textContent = valid && j.aw !== undefined && j.aw !== null ? String(Math.round(j.aw)) : "—";
     $("load_percent").textContent = valid && j.lp !== undefined && j.lp !== null ? String(Math.round(j.lp)) : "—";
-    $("batt_voltage").textContent = valid && j.bv !== undefined && j.bv !== null ? Number(j.bv).toFixed(2) : "—";
-    $("batt_charge_current").textContent = valid && j.bcc !== undefined && j.bcc !== null ? String(Math.round(j.bcc)) : "—";
-    $("batt_soc").textContent = valid && j.bs !== undefined && j.bs !== null ? String(Math.round(j.bs)) : "—";
+    $("batt_voltage").textContent = battValid && j.bv !== undefined && j.bv !== null ? Number(j.bv).toFixed(2) : "—";
+    $("batt_current").textContent = battValid && j.bc !== undefined && j.bc !== null ? String(Math.round(j.bc)) : "—";
+    $("batt_soc").textContent = battValid && j.bs !== undefined && j.bs !== null ? String(Math.round(j.bs)) : "—";
     $("heatsink_temp").textContent = valid && j.ht !== undefined && j.ht !== null ? String(Math.round(j.ht)) : "—";
     $("pv_input_current_batt").textContent = valid && j.pi !== undefined && j.pi !== null ? String(Math.round(j.pi)) : "—";
     $("pv_input_voltage").textContent = valid && j.piv !== undefined && j.piv !== null ? Number(j.piv).toFixed(1) : "—";
-    $("batt_voltage_from_scc").textContent = valid && j.bvs !== undefined && j.bvs !== null ? Number(j.bvs).toFixed(2) : "—";
-    $("batt_discharge_current").textContent = valid && j.bdc !== undefined && j.bdc !== null ? String(Math.round(j.bdc)) : "—";
     $("pv_charging_power").textContent = valid && j.pcp !== undefined && j.pcp !== null ? String(Math.round(j.pcp)) : "—";
-    $("g_inverter_mode_code").textContent = j.mc !== undefined && j.mc !== null ? j.mc : "—";
-    $("g_inverter_mode_name").textContent = j.mn !== undefined && j.mn !== null ? j.mn : "—";
+    $("batt_mode").textContent = battValid && j.bm !== undefined && j.bm !== null && j.bm !== "" ? j.bm : "—";
 
     // Phone tiles: battery, mobile-data traffic.
     const phoneValid = !!j.phv;

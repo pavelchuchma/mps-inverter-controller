@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include "inverter_comm.h"
+#include "pylontech_comm.h"
 #include "config.h"
 #include "phone.h"
 #include "relay.h"
@@ -71,24 +72,22 @@ static String makeStatusJson() {
   JsonDocument doc;
   InverterState s = {};
   inverter_get_status(&s);
-  char mode_code = '\0';
-  char mode_name[32] = "";
-  inverter_get_mode(&mode_code, mode_name, sizeof(mode_name));
+  // Battery values (SoC, voltage, current) come directly from the Pylontech
+  // console, independent of the inverter link.
+  PylontechState bat = {};
+  pylontech_get_status(&bat);
   doc["av"]  = s.ac_out_voltage;
-  doc["aa"]  = s.ac_apparent_va;
   doc["aw"]  = s.ac_active_w;
   doc["lp"]  = s.load_percent;
-  doc["bv"]  = s.batt_voltage;
-  doc["bcc"] = s.batt_charge_current;
-  doc["bs"]  = s.batt_soc;
+  doc["bv"]  = bat.voltage;
+  doc["bc"]  = bat.current;   // signed: + charge / - discharge
+  doc["bs"]  = bat.soc;
+  doc["bav"] = g_pylontech_data_valid;
   doc["ht"]  = s.heatsink_temp;
   doc["pi"]  = s.pv_input_current_batt;
   doc["piv"] = s.pv_input_voltage;
-  doc["bvs"] = s.batt_voltage_from_scc;
-  doc["bdc"] = s.batt_discharge_current;
   doc["pcp"] = s.pv_charging_power;
-  doc["mc"]  = String(mode_code);
-  doc["mn"]  = mode_name;
+  doc["bm"]  = bat.basic_status;   // battery mode: Idle / Charge / Discharge
   doc["iv"]  = g_inverter_data_valid;
   doc["ts"]  = s.ts_ms;
   doc["th"]  = isnan(g_temp_h) ? JsonVariant() : g_temp_h;
