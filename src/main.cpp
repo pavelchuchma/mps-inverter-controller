@@ -306,22 +306,31 @@ static void refresh_inverter_status() {
   inverter_get_status(&s);
 
   char buf[17];
-  if (!g_inverter_data_valid) {
+
+  // SoC and battery power come directly from the Pylontech console (its own
+  // validity flag), independent of the inverter link.
+  PylontechState bat;
+  pylontech_get_status(&bat);
+  if (!g_pylontech_data_valid) {
     display_set_row(ROW_SOC, "SoC: --");
-    display_set_row(ROW_PV_POWER, "PV: --");
     display_set_row(ROW_BATT_POWER, "Bat: --");
   } else {
-    snprintf(buf, sizeof(buf), "SoC: %d%%", s.batt_soc);
+    snprintf(buf, sizeof(buf), "SoC: %d%%", bat.soc);
     display_set_row(ROW_SOC, buf);
 
+    // current is signed: + charge / - discharge.
+    int batt_w = (int)(bat.voltage * bat.current);
+    snprintf(buf, sizeof(buf), "Bat: %dW", batt_w);
+    display_set_row(ROW_BATT_POWER, buf);
+  }
+
+  // PV power still comes from the inverter.
+  if (!g_inverter_data_valid) {
+    display_set_row(ROW_PV_POWER, "PV: --");
+  } else {
     int pv_w = (int)(s.pv_input_current_batt * s.pv_input_voltage);
     snprintf(buf, sizeof(buf), "PV: %dW", pv_w);
     display_set_row(ROW_PV_POWER, buf);
-
-    int charge_w = (int)(s.batt_voltage * s.batt_charge_current);
-    int discharge_w = -(int)(s.batt_voltage * s.batt_discharge_current);
-    snprintf(buf, sizeof(buf), "Bat: %d/%dW", charge_w, discharge_w);
-    display_set_row(ROW_BATT_POWER, buf);
   }
   display_redraw();
 }
