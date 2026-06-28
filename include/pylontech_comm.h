@@ -11,7 +11,13 @@
 #define PYLONTECH_CMD "pwr 1\r"          // command terminated with CR
 
 // Response collection timing
-#define PYLONTECH_READ_WINDOW_MS 2000  // max time to wait for the end sentinel
+// A complete 'pwr' frame arrives in ~110 ms (895 B at 115200 baud ≈ 78 ms wire
+// time + console latency; max observed ~163 ms). The window only bounds reads
+// that never see the sentinel — a successful read returns the instant the
+// sentinel arrives, so a larger window does not slow the common path. 300 ms is
+// ~2x the observed max (margin for an occasional mid-frame console pause) and
+// bounds the dead-line case to MAX_ATTEMPTS * 300 ms = 3 s, within one interval.
+#define PYLONTECH_READ_WINDOW_MS 300  // max time to wait for the end sentinel
 
 // Consensus read: over a long noisy RS232 line (~1 bad byte / 10 kB) a single
 // corrupted byte can slip past field validation and skew a value. Each poll

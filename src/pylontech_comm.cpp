@@ -218,10 +218,14 @@ static bool states_match(const PylontechState& a, const PylontechState& b) {
 // or corrupted frame (both already logged downstream).
 static bool pylontech_read_one(PylontechState& out) {
   String resp;
-  if (!pylontech_collect_response(resp)) {
-    Serial.println("[BAT] no response from battery console");
+  unsigned long t0 = millis();
+  bool got = pylontech_collect_response(resp);
+  unsigned long dt = millis() - t0;
+  if (!got) {
+    Serial.printf("[BAT] no response from battery console (waited %lu ms)\n", dt);
     return false;
   }
+  Serial.printf("[BAT] response: %u bytes in %lu ms\n", (unsigned)resp.length(), dt);
   if (!parse_pwr_payload(resp, out)) {
     Serial.println("[BAT] failed to parse pwr response");
     return false;
