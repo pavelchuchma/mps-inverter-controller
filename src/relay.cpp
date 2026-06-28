@@ -1,5 +1,6 @@
 #include "relay.h"
 #include "inverter_comm.h"
+#include "pylontech_comm.h"
 #include "influx.h"
 #include "utils.h"
 
@@ -18,14 +19,13 @@ static constexpr uint8_t STATE_BITS[4] = {
 static constexpr uint16_t RELAY_SETTLE_MS = 30;  // spec ≥ 30 ms
 static constexpr uint16_t RELAY_B_VERIFY_TIMEOUT_MS = 1000;  // opto + RC filter can be slow
 
-// The boiler must heat only from PV surplus, never from the battery (it is
-// small and would drain quickly). Any battery discharge above this current [A]
-// counts as "discharging".
-static constexpr float BOILER_MAX_BATT_DISCHARGE_A = 0.0f;
-// Discharge must persist this long before the boiler steps down one level. With
-// inverter data refreshed only every INVERTER_POLL_INTERVAL_MS (3 s) this is
-// just a few samples, so it is kept generous to give the inverter time to react
-// before we intervene.
+// The boiler must heat only from PV surplus, never from the battery. Discharge is
+// read directly from the battery (Pylontech signed current, + charge / - discharge).
+// A small negative deadband around idle [A] avoids tripping the step-down on noise
+// near zero; current below -BOILER_DISCHARGE_A counts as "discharging".
+static constexpr float BOILER_DISCHARGE_A = 2.0f;
+// Discharge must persist this long before the boiler steps down one level. A brief
+// spike must not trip it, so require this much continuous discharge.
 static constexpr uint32_t BOILER_DISCHARGE_OFF_MS = 10000;
 
 // --- Automatic power regulation thresholds ---
@@ -57,6 +57,27 @@ static constexpr uint32_t BOILER_MORNING_DELAY_MS = 2UL * 60 * 60 * 1000;  // 2 
 // MPP down) must NOT re-arm it, otherwise the morning delay would restart mid-day.
 // millis()-based, so it works without a network clock.
 static constexpr uint32_t BOILER_MORNING_REARM_MS = 60UL * 60 * 1000;  // 1 h
+
+// --- Battery-driven regulation (Pylontech) ---
+// All battery signals come directly from the Pylontech console; the inverter's
+// battery fields are no longer used for boiler control. Three SoC bands:
+//   < BOILER_RAISE_MIN_SOC          -> boiler OFF (let the battery recharge)
+//   [MIN_SOC .. BOILER_BATT_TAPER_SOC] -> step up from battery charge surplus
+//   > BOILER_BATT_TAPER_SOC         -> battery nearly full, BMS tapers the charge
+//                                      current so it is no longer a surplus signal;
+//                                      fall back to the PV-voltage heuristic.
+static constexpr int BOILER_BATT_TAPER_SOC = 95;  // battery SOC [%]
+// In the middle band a step up is allowed only when the power flowing into the
+// battery exceeds the extra load the next stage adds, times this margin. The 20 %
+// reserve keeps the stage from immediately causing discharge and oscillating.
+static constexpr float BOILER_STEP_MARGIN = 1.20f;
+// Watts the next step up adds, indexed by the current target rank
+// (OFF/500W/1000W/2000W). 0 at the top rank (no step).
+static constexpr int STEP_UP_INCREMENT_W[4] = { 500, 500, 1000, 0 };
+// Settle time between charge-surplus step-ups: long enough for at least one fresh
+// Pylontech sample (PYLONTECH_POLL_INTERVAL_MS, 5 s) to reflect the new load
+// before re-evaluating. The discharge rule still catches any overshoot in ~10 s.
+static constexpr uint32_t BOILER_BATT_RAISE_INTERVAL_MS = 60UL * 1000;  // 1 min
 
 // BOILER_ON_PIN reads a clean steady level when the boiler is genuinely on (LOW) or
 // off (HIGH), but the high-impedance INPUT_PULLUP picks up brief (sub-10 ms) noise
@@ -205,6 +226,11 @@ static void autoRegulate(uint32_t now) {
   InverterState s;
   inverter_get_status(&s);
 
+  // Battery state comes directly from the Pylontech console. tickBoiler() only
+  // calls autoRegulate() while pylontech_data_valid(), so this snapshot is fresh.
+  PylontechState b;
+  pylontech_get_status(&b);
+
   // Morning gate: block step-ups until BOILER_MORNING_DELAY_MS after PV voltage
   // first rises above BOILER_MORNING_PV_V (~dawn). The gate is re-armed only after
   // PV stays below that threshold for BOILER_MORNING_REARM_MS (~nightfall), so a
@@ -248,7 +274,8 @@ static void autoRegulate(uint32_t now) {
 
   // Rule 2: sustained battery discharge -> step down one level. A brief spike
   // must not trip it, so require BOILER_DISCHARGE_OFF_MS of continuous discharge.
-  bool discharging = s.batt_discharge_current > BOILER_MAX_BATT_DISCHARGE_A;
+  // Pylontech current is signed (+ charge / - discharge).
+  bool discharging = b.current < -BOILER_DISCHARGE_A;
   if (discharging && !battDischarging) {
     battDischarging = true;
     dischargeStartMs = now;
@@ -258,16 +285,43 @@ static void autoRegulate(uint32_t now) {
   bool sustainedDischarge = battDischarging &&
                             (now - dischargeStartMs >= BOILER_DISCHARGE_OFF_MS);
 
+  // Rule 1 (overload) and Rule 2 (discharge) apply in every band and take
+  // priority over any step up.
   if (sustainedOverload) {
     setBoilerTarget(BOILER_OFF, "AC overload");
-  } else if (sustainedDischarge && targetPower > BOILER_OFF) {
+    return;
+  }
+  if (sustainedDischarge && targetPower > BOILER_OFF) {
     setBoilerTarget((BoilerPower)(targetPower - 1), "battery discharge");
     dischargeStartMs = now;  // restart timer so the next step-down waits again
-  } else if (targetPower < BOILER_2000W && morningPassed &&
-             s.batt_soc > BOILER_RAISE_MIN_SOC &&
-             s.pv_input_voltage > BOILER_RAISE_MIN_PV_V &&
-             (now - lastPowerChangeMs >= BOILER_RAISE_INTERVAL_MS)) {
-    setBoilerTarget((BoilerPower)(targetPower + 1), "PV surplus");
+    return;
+  }
+
+  // SoC bands (battery SOC straight from the Pylontech).
+  if (b.soc < BOILER_RAISE_MIN_SOC) {
+    // Below the floor: keep the boiler off so the battery can recharge.
+    setBoilerTarget(BOILER_OFF, "battery SOC low");
+  } else if (b.soc <= BOILER_BATT_TAPER_SOC) {
+    // Middle band: the battery is strong enough that its charge power is a good
+    // surplus signal. Step up only when the power flowing into the battery
+    // exceeds the extra load the next stage adds (plus the BOILER_STEP_MARGIN
+    // reserve). current > 0 means charging; otherwise there is no surplus.
+    float chargeW = b.current > 0 ? b.voltage * b.current : 0.0f;
+    if (targetPower < BOILER_2000W &&
+        (now - lastPowerChangeMs >= BOILER_BATT_RAISE_INTERVAL_MS) &&
+        chargeW > STEP_UP_INCREMENT_W[targetPower] * BOILER_STEP_MARGIN) {
+      setBoilerTarget((BoilerPower)(targetPower + 1), "battery charge surplus");
+    }
+  } else {
+    // Near full: the BMS tapers the charge current, so it no longer reflects the
+    // available surplus. Fall back to the PV-voltage heuristic: try a step up
+    // every BOILER_RAISE_INTERVAL_MS and let the discharge rule back it off if
+    // the panels cannot carry it.
+    if (targetPower < BOILER_2000W && morningPassed &&
+        s.pv_input_voltage > BOILER_RAISE_MIN_PV_V &&
+        (now - lastPowerChangeMs >= BOILER_RAISE_INTERVAL_MS)) {
+      setBoilerTarget((BoilerPower)(targetPower + 1), "PV surplus");
+    }
   }
 }
 
@@ -309,6 +363,7 @@ void tickBoiler() {
   const char* forceOffReason = nullptr;
   if (!isBoilerOn()) forceOffReason = "boiler input off";
   else if (!inverter_data_valid()) forceOffReason = "inverter data invalid";
+  else if (!pylontech_data_valid()) forceOffReason = "battery data invalid";
 
   if (forceOffReason) {
     // Cancel any in-flight B-verify wait and steer the chain back to OFF
