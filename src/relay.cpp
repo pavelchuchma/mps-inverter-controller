@@ -19,11 +19,17 @@ static constexpr uint8_t STATE_BITS[4] = {
 static constexpr uint16_t RELAY_SETTLE_MS = 30;  // spec ≥ 30 ms
 static constexpr uint16_t RELAY_B_VERIFY_TIMEOUT_MS = 1000;  // opto + RC filter can be slow
 
-// The boiler must heat only from PV surplus, never from the battery. Discharge is
-// read directly from the battery (Pylontech signed current, + charge / - discharge).
-// A small negative deadband around idle [A] avoids tripping the step-down on noise
-// near zero; current below -BOILER_DISCHARGE_A counts as "discharging".
-static constexpr float BOILER_DISCHARGE_A = 2.0f;
+// The boiler heats primarily from PV surplus. Discharge is read directly from the
+// battery (Pylontech signed current, + charge / - discharge). Current below the
+// (SoC-dependent) limit counts as "discharging" and steps the boiler down. The limit
+// also doubles as a deadband around idle so noise near zero does not trip a step-down.
+// When the battery is well charged (SoC > BOILER_DISCHARGE_HIGH_SOC) there is enough
+// reserve to let the boiler use it as a buffer, so a larger discharge is tolerated and
+// the boiler holds a higher stage through brief PV shortfalls. At lower SoC stay
+// conservative so the boiler does not drag the battery down.
+static constexpr float BOILER_DISCHARGE_A = 2.0f;       // base limit (lower SoC)
+static constexpr float BOILER_DISCHARGE_HIGH_A = 7.0f;  // limit when well charged
+static constexpr int BOILER_DISCHARGE_HIGH_SOC = 75;    // SoC [%] above which HIGH applies
 // Discharge must persist this long before the boiler steps down one level. A brief
 // spike must not trip it, so require this much continuous discharge.
 static constexpr uint32_t BOILER_DISCHARGE_OFF_MS = 10000;
@@ -293,8 +299,11 @@ static void autoRegulate(uint32_t now) {
 
   // Rule 2: sustained battery discharge -> step down one level. A brief spike
   // must not trip it, so require BOILER_DISCHARGE_OFF_MS of continuous discharge.
-  // Pylontech current is signed (+ charge / - discharge).
-  bool discharging = b.current < -BOILER_DISCHARGE_A;
+  // Pylontech current is signed (+ charge / - discharge). Tolerate a larger discharge
+  // while the battery is well charged (see BOILER_DISCHARGE_HIGH_SOC).
+  float dischargeLimitA = (b.soc > BOILER_DISCHARGE_HIGH_SOC)
+                            ? BOILER_DISCHARGE_HIGH_A : BOILER_DISCHARGE_A;
+  bool discharging = b.current < -dischargeLimitA;
   if (discharging && !battDischarging) {
     battDischarging = true;
     dischargeStartMs = now;
@@ -344,7 +353,7 @@ static void autoRegulate(uint32_t now) {
     bool throttledSurplus =
         morningPassed &&
         s.pv_input_voltage > BOILER_RAISE_MIN_PV_V &&
-        b.current > -BOILER_DISCHARGE_A &&
+        b.current > -dischargeLimitA &&
         (now - lastPowerChangeMs >= BOILER_RAISE_INTERVAL_MS) &&
         (now - lastDischargeStepDownMs >= BOILER_REPROBE_MS);
 
