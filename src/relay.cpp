@@ -50,8 +50,13 @@ static constexpr uint32_t BOILER_RAISE_INTERVAL_MS = 15UL * 60 * 1000;  // 15 mi
 // current useless as a surplus signal). So step-ups are blocked until this long
 // after PV voltage first rises above BOILER_MORNING_PV_V (~dawn). Tracked via
 // millis() from the rising edge — no RTC or sunrise time needed.
+// Kept short: while the battery is taking its morning charge it holds the MPP (and
+// thus PV voltage) down until it is nearly full, after which the inverter floats and
+// throttles the panels. A long delay would expire only after that throttling has
+// already begun, missing the surplus window. The discharge rule guards the battery
+// regardless, so a short gate is safe.
 static constexpr float BOILER_MORNING_PV_V = 300.0f;    // PV voltage marking dawn [V]
-static constexpr uint32_t BOILER_MORNING_DELAY_MS = 2UL * 60 * 60 * 1000;  // 2 h
+static constexpr uint32_t BOILER_MORNING_DELAY_MS = 30UL * 60 * 1000;  // 30 min
 // Re-arm the morning gate only after PV voltage stays below BOILER_MORNING_PV_V
 // for this long (~nightfall). A brief daytime dip (cloud + load spike pulling the
 // MPP down) must NOT re-arm it, otherwise the morning delay would restart mid-day.
@@ -60,16 +65,17 @@ static constexpr uint32_t BOILER_MORNING_REARM_MS = 60UL * 60 * 1000;  // 1 h
 
 // --- Battery-driven regulation (Pylontech) ---
 // All battery signals come directly from the Pylontech console; the inverter's
-// battery fields are no longer used for boiler control. Three SoC bands:
-//   < BOILER_RAISE_MIN_SOC          -> boiler OFF (let the battery recharge)
-//   [MIN_SOC .. BOILER_BATT_TAPER_SOC] -> step up from battery charge surplus
-//   > BOILER_BATT_TAPER_SOC         -> battery nearly full, BMS tapers the charge
-//                                      current so it is no longer a surplus signal;
-//                                      fall back to the PV-voltage heuristic.
-static constexpr int BOILER_BATT_TAPER_SOC = 95;  // battery SOC [%]
-// In the middle band a step up is allowed only when the power flowing into the
-// battery exceeds the extra load the next stage adds, times this margin. The 20 %
-// reserve keeps the stage from immediately causing discharge and oscillating.
+// battery fields are no longer used for boiler control. Two SoC bands:
+//   < BOILER_RAISE_MIN_SOC -> boiler OFF (let the battery recharge)
+//   >= BOILER_RAISE_MIN_SOC -> step up via either path; the discharge rule caps it:
+//     A) charge surplus  - the battery is accepting charge, so charge power is a
+//        direct surplus signal (fast, margin-limited).
+//     B) throttled surplus - near full the inverter floats and throttles the MPPT,
+//        so charge power reads ~0 even in full sun; treat high PV voltage + no
+//        discharge as surplus and probe upward (slow, discharge rule backs off).
+// On the charge-surplus path a step up is allowed only when the power flowing into
+// the battery exceeds the extra load the next stage adds, times this margin. The
+// 20 % reserve keeps the stage from immediately causing discharge and oscillating.
 static constexpr float BOILER_STEP_MARGIN = 1.20f;
 // Watts the next step up adds, indexed by the current target rank
 // (OFF/500W/1000W/2000W). 0 at the top rank (no step).
@@ -78,6 +84,11 @@ static constexpr int STEP_UP_INCREMENT_W[4] = { 500, 500, 1000, 0 };
 // Pylontech sample (PYLONTECH_POLL_INTERVAL_MS, 5 s) to reflect the new load
 // before re-evaluating. The discharge rule still catches any overshoot in ~10 s.
 static constexpr uint32_t BOILER_BATT_RAISE_INTERVAL_MS = 60UL * 1000;  // 1 min
+// After the discharge rule steps the boiler down (the panels could not carry the
+// stage it probed), the throttled-surplus path must hold the lower stage at least
+// this long before probing up again. Lets it settle on the sustainable ceiling and
+// re-probe only occasionally as the sun changes, instead of oscillating up/down.
+static constexpr uint32_t BOILER_REPROBE_MS = 30UL * 60 * 1000;  // 30 min
 
 // BOILER_ON_PIN reads a clean steady level when the boiler is genuinely on (LOW) or
 // off (HIGH), but the high-impedance INPUT_PULLUP picks up brief (sub-10 ms) noise
@@ -129,6 +140,11 @@ static uint32_t overloadStartMs = 0;
 // Last time the commanded target changed (up or down). Used to space out the
 // automatic step-ups (BOILER_RAISE_INTERVAL_MS).
 static uint32_t lastPowerChangeMs = 0;
+
+// Last time the discharge rule stepped the boiler down. The throttled-surplus path
+// holds off probing up for BOILER_REPROBE_MS after this (see autoRegulate()).
+// Initialised in boilerRelayInit() so the window is already elapsed at boot.
+static uint32_t lastDischargeStepDownMs = 0;
 
 // Debounced boiler-input state (see BOILER_INPUT_DEBOUNCE_MS / sampleBoilerInput()).
 // boilerInputState is the reported (debounced) value; boilerInputLastRaw and
@@ -196,6 +212,9 @@ void boilerRelayInit() {
   targetPower = BOILER_OFF;
   lastStepMs = millis();
   lastPowerChangeMs = millis();
+  // Pre-date so the reprobe window is already elapsed at boot (modular arithmetic
+  // keeps "now - lastDischargeStepDownMs >= BOILER_REPROBE_MS" true from tick one).
+  lastDischargeStepDownMs = millis() - BOILER_REPROBE_MS;
   waitingForRelayBVerify = false;
 }
 
@@ -294,6 +313,7 @@ static void autoRegulate(uint32_t now) {
   if (sustainedDischarge && targetPower > BOILER_OFF) {
     setBoilerTarget((BoilerPower)(targetPower - 1), "battery discharge");
     dischargeStartMs = now;  // restart timer so the next step-down waits again
+    lastDischargeStepDownMs = now;  // hold the throttled-surplus probe (reprobe gate)
     return;
   }
 
@@ -301,25 +321,36 @@ static void autoRegulate(uint32_t now) {
   if (b.soc < BOILER_RAISE_MIN_SOC) {
     // Below the floor: keep the boiler off so the battery can recharge.
     setBoilerTarget(BOILER_OFF, "battery SOC low");
-  } else if (b.soc <= BOILER_BATT_TAPER_SOC) {
-    // Middle band: the battery is strong enough that its charge power is a good
-    // surplus signal. Step up only when the power flowing into the battery
-    // exceeds the extra load the next stage adds (plus the BOILER_STEP_MARGIN
-    // reserve). current > 0 means charging; otherwise there is no surplus.
+  } else if (targetPower < BOILER_2000W) {
+    // At/above the floor two independent step-up paths can raise the boiler; the
+    // discharge rule above caps any overshoot. "Up" is optimistic, "down" is guarded.
+
+    // Path A (charge surplus): the battery is actively accepting charge, so its
+    // charge power is a direct surplus signal. Step up only when the power flowing
+    // into the battery exceeds the extra load the next stage adds (plus the
+    // BOILER_STEP_MARGIN reserve). current > 0 means charging. Fast cadence.
     float chargeW = b.current > 0 ? b.voltage * b.current : 0.0f;
-    if (targetPower < BOILER_2000W &&
+    bool chargeSurplus =
         (now - lastPowerChangeMs >= BOILER_BATT_RAISE_INTERVAL_MS) &&
-        chargeW > STEP_UP_INCREMENT_W[targetPower] * BOILER_STEP_MARGIN) {
-      setBoilerTarget((BoilerPower)(targetPower + 1), "battery charge surplus");
-    }
-  } else {
-    // Near full: the BMS tapers the charge current, so it no longer reflects the
-    // available surplus. Fall back to the PV-voltage heuristic: try a step up
-    // every BOILER_RAISE_INTERVAL_MS and let the discharge rule back it off if
-    // the panels cannot carry it.
-    if (targetPower < BOILER_2000W && morningPassed &&
+        chargeW > STEP_UP_INCREMENT_W[targetPower] * BOILER_STEP_MARGIN;
+
+    // Path B (throttled surplus): near full the inverter floats and throttles the
+    // MPPT, so charge power reads ~0 even in full sun (high pv_v, tiny current). With
+    // no other load this deadlocks the boiler. Treat "sun available (high pv_v) AND
+    // battery not discharging" as surplus and probe upward on the slow cadence; the
+    // discharge rule backs it off if the panels cannot carry it. Gated by the morning
+    // warm-up and held BOILER_REPROBE_MS after the last discharge step-down so it
+    // settles on the sustainable ceiling instead of oscillating.
+    bool throttledSurplus =
+        morningPassed &&
         s.pv_input_voltage > BOILER_RAISE_MIN_PV_V &&
-        (now - lastPowerChangeMs >= BOILER_RAISE_INTERVAL_MS)) {
+        b.current > -BOILER_DISCHARGE_A &&
+        (now - lastPowerChangeMs >= BOILER_RAISE_INTERVAL_MS) &&
+        (now - lastDischargeStepDownMs >= BOILER_REPROBE_MS);
+
+    if (chargeSurplus) {
+      setBoilerTarget((BoilerPower)(targetPower + 1), "battery charge surplus");
+    } else if (throttledSurplus) {
       setBoilerTarget((BoilerPower)(targetPower + 1), "PV surplus");
     }
   }
