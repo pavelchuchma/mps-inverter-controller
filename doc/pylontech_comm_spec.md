@@ -29,8 +29,9 @@ The battery console port connects to the ESP32 via **UART2 (`Serial2`)**.
 Pins are defined in `include/config.h` (`BATTERY_RX_PIN`, `BATTERY_TX_PIN`)
 and passed to `pylontech_comm_init(rx_pin, tx_pin)`.
 
-> The console port operates at logic levels; check the battery's console
-> connector pinout and level requirements before wiring directly to the ESP32.
+The battery's `Console` connector carries true RS232 levels, not logic levels,
+so a MAX3232 sits between it and the ESP32. Connector pinout and the shared 10 m
+link cable: [`rj45_cable_wiring.md`](rj45_cable_wiring.md).
 
 ## Serial parameters
 

@@ -90,11 +90,14 @@ module VCC  → 5 V (VIN)
 module GND  → GND
 module TXD  ← GPIO12,  plus 2.2 kΩ from GPIO12 to GND
 module RXD  → 4.7 kΩ → GPIO0,  plus 10 kΩ from GPIO0 to GND
-module CANH → battery RJ45 pin 4      (verify against the US5000 manual)
-module CANL → battery RJ45 pin 5      (verify)
+module CANH → battery A/CAN RJ45 pin 4
+module CANL → battery A/CAN RJ45 pin 5
 ```
 
-Ground is already common with the battery through the console port.
+Pin 4 = CAN-H and pin 5 = CAN-L are confirmed by the US5000 manual. Ground is
+already common with the battery through the console port, so `A/CAN` pin 6
+(CAN-GND) stays unwired. Both CAN conductors share the 10 m link cable with the
+two RS232 links — see [`rj45_cable_wiring.md`](rj45_cable_wiring.md).
 
 ### Pin assignment rationale
 
@@ -266,4 +269,5 @@ BMS protects itself with its own FETs — so this is deliberately deferred.
 
 - [TJA1050 datasheet (NXP)](https://doc.platan.ru/pdf/datasheets/fulihao/TJA1050.pdf)
 - `doc/pylontech_comm_spec.md` — the existing console-port link
+- `doc/rj45_cable_wiring.md` — how CAN shares the 10 m link cable with both RS232 links
 - `doc/ps_rs232_protocol_FULL_ai_ready.txt` — inverter RS232 protocol

@@ -19,8 +19,8 @@
 //        LCD_BACKLIGHT_PIN  GPIO26 | 10 || 29 | GPIO5   LCD_D6 (boot)
 //          RELAY_BOILER_A   GPIO27 | 11 || 30 | GPIO17  INVERTER_RX_PIN
 //          RELAY_BOILER_B   GPIO14 | 12 || 31 | GPIO16  INVERTER_TX_PIN
-//                   (boot)  GPIO12 | 13 || 32 | GPIO4   BTN_UP_TOUCH
-//                              GND | 14 || 33 | GPIO0   (boot)
+// BATTERY_CAN_TX_PIN (boot) GPIO12 | 13 || 32 | GPIO4   BTN_UP_TOUCH
+//                              GND | 14 || 33 | GPIO0   BATTERY_CAN_RX_PIN (boot)
 //          RELAY_BOILER_C   GPIO13 | 15 || 34 | GPIO2   (boot)
 //                    (SPI)  GPIO9  | 16 || 35 | GPIO15  BTN_DOWN_TOUCH (boot)
 //                    (SPI)  GPIO10 | 17 || 36 | GPIO8   (SPI)
@@ -47,6 +47,13 @@
 // --- Battery UART ---
 #define BATTERY_RX_PIN 39  // SVN, input-only — sufficient for RX
 #define BATTERY_TX_PIN 32
+
+// --- Battery CAN (via TJA1050) ---
+// Both are strapping pins; see doc/battery_can_spec.md "Pin assignment
+// rationale". GPIO12 needs an external 2.2k pull-down or the board will not
+// boot, GPIO0 sits behind a 4.7k/10k divider from the transceiver's 5 V RXD.
+#define BATTERY_CAN_TX_PIN 12
+#define BATTERY_CAN_RX_PIN 0
 
 // --- LCD QC1602A (4-bit parallel mode) ---
 #define LCD_RS 21
