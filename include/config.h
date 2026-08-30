@@ -94,7 +94,9 @@
 #define BTN_DOWN_TOUCH 15  // Touch3 (GPIO15)
 
 // Touch threshold for detecting a press. Raw values vary by board/environment.
-#define BTN_TOUCH_THRESHOLD 48
+// Measured with the current wiring: idle 44-54, pressed 0-20 on both buttons,
+// so 30 sits in the gap with ~14 counts of margin on either side.
+#define BTN_TOUCH_THRESHOLD 30
 
 // --- NTC Thermistor (temperature sensor) ---
 // Wiring per: https://www.smartlab.at/a-diy-guide-measuring-water-temperature-with-an-ntc-10k-thermistor-and-esp32/

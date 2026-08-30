@@ -266,17 +266,9 @@ static void task_scan_touch() {
   const uint32_t nowMs = millis();
   bool btnStateChanged = false;
 
-  // DEBUG: print raw touchRead() values for both buttons once per second
-  static uint32_t lastDebugMs = 0;
-  uint16_t debugRaw[2] = {0, 0};
-
   for (int i = 0; i < 2; i++) {
     uint16_t raw = touchRead(touches[i]);
-    debugRaw[i] = raw;
     bool nowPressed = (raw <= BTN_TOUCH_THRESHOLD);
-    if (nowPressed) {
-      Serial.printf("T%d=%u %s\n", i, (unsigned)raw, nowPressed ? "PRESSED" : "RELEASED");
-    }
 
     // Detect falling edge (press)
     if (nowPressed && !btnStates[i].pressed) {
@@ -297,12 +289,6 @@ static void task_scan_touch() {
   // Activate backlight on any button event
   if (btnStateChanged) {
     displayBacklightOn();
-  }
-
-  // DEBUG: log raw touch values every second
-  if (nowMs - lastDebugMs >= 1000) {
-    lastDebugMs = nowMs;
-//    Serial.printf("touchRead: UP=%u DOWN=%u\n", (unsigned)debugRaw[0], (unsigned)debugRaw[1]);
   }
 }
 
