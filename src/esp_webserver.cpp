@@ -5,6 +5,7 @@
 #include <ArduinoJson.h>
 #include "inverter_comm.h"
 #include "pylontech_comm.h"
+#include "pylontech_can.h"
 #include "config.h"
 #include "phone.h"
 #include "relay.h"
@@ -199,6 +200,84 @@ static void handleStatus() {
   server.send(200, "application/json", s);
 }
 
+// --------- Battery CAN link diagnostics ---------
+// Emit a decoded field, or null when the frame group carrying it has never
+// arrived. A zero there is indistinguishable from a real measurement of zero,
+// which is exactly the confusion a diagnostic endpoint must not create.
+static void canField(JsonObject o, const char* key, float v, uint32_t ts) {
+  if (ts) o[key] = v; else o[key] = nullptr;
+}
+static void canFieldInt(JsonObject o, const char* key, long v, uint32_t ts) {
+  if (ts) o[key] = v; else o[key] = nullptr;
+}
+
+
+// Returns the last raw payload per identifier alongside the decoded values, so
+// byte order and scaling stay verifiable at any time — during bring-up, and
+// after any firmware change that touches the parser. See
+// doc/battery_can_data_spec.md.
+static void handleCan() {
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  server.sendHeader("Pragma", "no-cache");
+  server.sendHeader("Expires", "-1");
+
+  PylontechCanState s = {};
+  PylontechCanLink lk = {};
+  PylontechCanRaw raw[CAN_RAW_SLOTS] = {};
+  pylontech_can_get(&s);
+  pylontech_can_get_link(&lk);
+  pylontech_can_get_raw(raw);
+  unsigned long now = millis();
+
+  JsonDocument doc;
+  doc["valid"] = pylontech_can_valid();
+
+  JsonObject frames = doc["frames"].to<JsonObject>();
+  for (int i = 0; i < CAN_RAW_SLOTS; ++i) {
+    if (raw[i].id == 0) continue;
+    char key[8];
+    snprintf(key, sizeof(key), "%03X", (unsigned)raw[i].id);
+    char hex[24];
+    int n = 0;
+    for (int b = 0; b < raw[i].dlc && b < 8; ++b) {
+      n += snprintf(hex + n, sizeof(hex) - n, b ? " %02X" : "%02X", raw[i].data[b]);
+    }
+    hex[n] = '\0';
+    JsonObject f = frames[key].to<JsonObject>();
+    f["raw"] = hex;
+    f["age_ms"] = now - raw[i].ts_ms;
+    f["count"] = raw[i].count;
+  }
+
+  JsonObject dec = doc["decoded"].to<JsonObject>();
+  canField(dec, "charge_v", s.charge_v, s.limits_ts_ms);
+  canField(dec, "ccl_a", s.ccl_a, s.limits_ts_ms);
+  canField(dec, "dcl_a", s.dcl_a, s.limits_ts_ms);
+  canFieldInt(dec, "soc", s.soc, s.soc_ts_ms);
+  canFieldInt(dec, "soh", s.soh, s.soc_ts_ms);
+  canField(dec, "voltage_v", s.voltage_v, s.measured_ts_ms);
+  canField(dec, "current_a", s.current_a, s.measured_ts_ms);
+  canField(dec, "temp_c", s.temp_c, s.measured_ts_ms);
+  canFieldInt(dec, "protection", s.protection, s.alarms_ts_ms);
+  canFieldInt(dec, "alarm", s.alarm, s.alarms_ts_ms);
+  canFieldInt(dec, "modules", s.modules, s.alarms_ts_ms);
+  canFieldInt(dec, "request_flags", s.request_flags, s.requests_ts_ms);
+
+  JsonObject link = doc["link"].to<JsonObject>();
+  link["state"] = lk.state;
+  link["rx"] = lk.rx_frames;
+  link["missed"] = lk.rx_missed;
+  link["bus_err"] = lk.bus_errors;
+  link["recoveries"] = lk.recoveries;
+  link["tx_failed"] = lk.tx_failed;
+  link["rejected"] = lk.rejected;
+  link["last_rx_age_ms"] = lk.last_rx_ms ? (now - lk.last_rx_ms) : 0;
+
+  String out;
+  serializeJson(doc, out);
+  server.send(200, "application/json", out);
+}
+
 // --------- Inverter configuration read-back (on-demand) ---------
 // Queries QPIRI/QFLAG/QMOD over RS232 right now and returns the raw payloads.
 // All parsing/mapping to the manual is done client-side (data/settings.js), so
@@ -372,6 +451,7 @@ static void handleUploadData() {
 void webserver_setup_routes() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/status", HTTP_GET, handleStatus);
+  server.on("/can", HTTP_GET, handleCan);
   server.on("/inv_config", HTTP_GET, handleInvConfig);
   server.on("/inv_set", HTTP_POST, handleInvSet);
   server.on("/cmd", HTTP_POST, handleCmdHttp);

@@ -212,8 +212,9 @@ void setup() {
   // Initialize Pylontech battery console communication (background task)
   pylontech_comm_init(BATTERY_RX_PIN, BATTERY_TX_PIN);
 
-  // Battery CAN link bring-up: receive the BMS broadcast and print it decoded.
-  // Nothing is published yet, see doc/battery_can_spec.md stage 1.
+  // Battery CAN link: decode the BMS broadcast into a published state and
+  // reply with 0x305 at 1 Hz. Nothing consumes it yet — GET /can is where the
+  // decoding is checked, see doc/battery_can_data_spec.md commit 1.
   pylontech_can_init(BATTERY_CAN_TX_PIN, BATTERY_CAN_RX_PIN);
 
   // Start polling phone status endpoint (background task, 30s interval)
