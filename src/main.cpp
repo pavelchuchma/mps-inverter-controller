@@ -10,6 +10,7 @@
 #include "display.h"
 #include "inverter_comm.h"
 #include "pylontech_comm.h"
+#include "pylontech_can.h"
 #include "phone.h"
 #include "phone_charger.h"
 #include "influx.h"
@@ -210,6 +211,10 @@ void setup() {
 
   // Initialize Pylontech battery console communication (background task)
   pylontech_comm_init(BATTERY_RX_PIN, BATTERY_TX_PIN);
+
+  // Battery CAN link bring-up: receive the BMS broadcast and print it decoded.
+  // Nothing is published yet, see doc/battery_can_spec.md stage 1.
+  pylontech_can_init(BATTERY_CAN_TX_PIN, BATTERY_CAN_RX_PIN);
 
   // Start polling phone status endpoint (background task, 30s interval)
   phone_comm_init();
