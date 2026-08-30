@@ -3,7 +3,7 @@
 ## Overview
 
 All three data links between the ESP32 and the power hardware share a single
-**10 m Ethernet patch cable (UTP, 8 conductors)**:
+**~15 m Ethernet patch cable (UTP, 8 conductors)**:
 
 | Link | Peer | Doc |
 |---|---|---|

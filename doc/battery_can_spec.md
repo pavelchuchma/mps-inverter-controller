@@ -96,7 +96,7 @@ module CANL → battery A/CAN RJ45 pin 5
 
 Pin 4 = CAN-H and pin 5 = CAN-L are confirmed by the US5000 manual. Ground is
 already common with the battery through the console port, so `A/CAN` pin 6
-(CAN-GND) stays unwired. Both CAN conductors share the 10 m link cable with the
+(CAN-GND) stays unwired. Both CAN conductors share the 15 m link cable with the
 two RS232 links — see [`rj45_cable_wiring.md`](rj45_cable_wiring.md).
 
 ### Pin assignment rationale
@@ -269,5 +269,5 @@ BMS protects itself with its own FETs — so this is deliberately deferred.
 
 - [TJA1050 datasheet (NXP)](https://doc.platan.ru/pdf/datasheets/fulihao/TJA1050.pdf)
 - `doc/pylontech_comm_spec.md` — the existing console-port link
-- `doc/rj45_cable_wiring.md` — how CAN shares the 10 m link cable with both RS232 links
+- `doc/rj45_cable_wiring.md` — how CAN shares the 15 m link cable with both RS232 links
 - `doc/ps_rs232_protocol_FULL_ai_ready.txt` — inverter RS232 protocol
