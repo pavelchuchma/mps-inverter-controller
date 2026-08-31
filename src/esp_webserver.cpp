@@ -195,6 +195,20 @@ static String handleCommand(JsonDocument& doc) {
                          : "Serial links paused, auto-resume in 30 min");
   }
 
+  // Force the CAN bus dominant for two seconds, then restart the driver. Every
+  // observed recovery of a silent pack followed an ESP32 boot, whose GPIO12
+  // pull-down jams the bus the same way; this is that effect made deliberate,
+  // without restarting the whole controller. Blocks ~2 s.
+  if (strcmp(name, "can_bus_reset") == 0) {
+    if (pylontech_can_valid()) {
+      return makeErrJson("link_healthy",
+                         "CAN link is up; a bus reset would knock the pack off it");
+    }
+    bool ok = pylontech_can_force_bus_reset();
+    return ok ? makeAckJson("CAN bus reset done")
+              : makeErrJson("io_error", "CAN driver failed to restart");
+  }
+
   if (strcmp(name, "clear_log") == 0) {
     File f = LittleFS.open("/app.log", "w");
     if (!f) {
@@ -293,6 +307,8 @@ static void handleCan() {
   link["rx"] = lk.rx_frames;
   link["missed"] = lk.rx_missed;
   link["bus_err"] = lk.bus_errors;
+  link["rec"] = lk.rx_err;
+  link["tec"] = lk.tx_err;
   link["recoveries"] = lk.recoveries;
   link["tx_failed"] = lk.tx_failed;
   link["rejected"] = lk.rejected;

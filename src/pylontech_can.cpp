@@ -23,7 +23,12 @@
 // reading a day at once is the rate, not the running count. 72 lines a day at
 // ~150 B is ~10 kB, comfortably inside the 100 kB the log rotates at, and far
 // away from the per-frame writes constraint 4 of the data spec forbids.
-#define CAN_LOG_INTERVAL_MS (20UL * 60UL * 1000UL)
+// TEMPORARY: 1 min instead of 20 while chasing why the link dies every 15
+// minutes or so - 20 min is too coarse to see whether a fall is preceded by the
+// frame rate sagging. At ~150 B a line this rotates the 100 kB log about twice a
+// day, keeping roughly the last 8 hours. Put it back to 20 min once the
+// question is answered.
+#define CAN_LOG_INTERVAL_MS (60UL * 1000UL)
 
 // Trace every 0x351 to the serial monitor, so the link can be watched live
 // during bring-up. 0x351 arrives once per burst (every 2 s on this pack), so
@@ -31,24 +36,32 @@
 // printInfo(): nothing per-frame may reach flash.
 #define CAN_TRACE_LIMITS 1
 
-// How often 0x305 is retried while the bus is silent, in case the reply is
-// what wakes the pack. See the transmit site for why this is not 1 Hz.
-#define CAN_WAKE_PROBE_INTERVAL_MS 30000
+// Deliberate bus reset, see pylontech_can_force_bus_reset(). Long enough that
+// any node still listening cannot mistake it for ordinary bus traffic.
+#define CAN_BUS_RESET_DOMINANT_MS 2000
 
-// --- transmit disabled, deliberately ---------------------------------------
-// The bring-up sniffer transmitted nothing while frames were arriving, and the
-// link worked. Sending 0x305 unconditionally (step 1.2.5 of the data spec) is
-// the one thing that changed, and the pack has been silent since — and before
-// single-shot landed, every unacknowledged reply auto-retried into bus-off,
-// spraying error flags across the bus for some forty minutes, which is enough
-// to push the pack's own error counters into error-passive or bus-off.
+// --- transmit: the 0x305 inverter reply ------------------------------------
+// Back on, and the history matters because it nearly ended the link.
 //
-// So the controller now transmits nothing at all: the proven-working
-// configuration, and the clean test of whether we caused the silence. This
-// does NOT make it listen-only — TWAI_MODE_NORMAL still acknowledges every
-// received frame, which is mandatory and is what keeps the pack transmitting.
-// Re-enable only once the pack is healthy again, and then only into silence.
-#define CAN_SEND_HEARTBEAT 0
+// The vendor spec requires the inverter to reply every second. Sending it
+// unconditionally (step 1.2.5 of the data spec) was catastrophic: nothing
+// acknowledged it, the controller auto-retried at bus speed, and a single
+// queued frame walked the error counter to bus-off in milliseconds while
+// spraying error flags that corrupted the pack's own frames. It was disabled
+// entirely to get out of that hole.
+//
+// Two changes make it safe now, and both are already proven:
+//   - TWAI_MSG_FLAG_SS, so a missing acknowledge costs one error-counter
+//     increment instead of an unbounded retry storm;
+//   - peer_present gating, so the full 1 Hz rate only goes out while the pack
+//     is actually broadcasting, i.e. while there is someone there to ack it.
+//
+// What is being tested by turning it back on: the pack broadcasts for 2 to 50
+// minutes and then stops, with our side perfectly clean (state running, no
+// missed frames, no recoveries, a handful of bus errors). A BMS that stops
+// talking because the inverter stopped answering is ordinary behaviour, and we
+// are the inverter that stopped answering.
+#define CAN_SEND_HEARTBEAT 1
 
 // Bus-off recovery back-off. With no peer on the wire every frame we send goes
 // unacknowledged, the error counter runs away and the controller drops back to
@@ -413,10 +426,11 @@ static void pylontech_can_task(void* arg) {
     // pack talks, a slow probe while it does not (in case 0x305 is what wakes
     // it), and single-shot either way so a missing acknowledge costs one
     // increment instead of a retry storm.
-    unsigned long tx_interval = peer_present ? CAN_HEARTBEAT_INTERVAL_MS
-                                             : CAN_WAKE_PROBE_INTERVAL_MS;
-    if (have_status && st.state == TWAI_STATE_RUNNING
-        && millis() - last_heartbeat >= tx_interval) {
+    // Nothing goes out into a silent bus. A 30 s wake probe was tried and did
+    // nothing across 25 attempts, while adding error flags to a bus the pack
+    // needs quiet to recover on - 128 consecutive idle bit sequences.
+    if (peer_present && have_status && st.state == TWAI_STATE_RUNNING
+        && millis() - last_heartbeat >= CAN_HEARTBEAT_INTERVAL_MS) {
       last_heartbeat = millis();
       twai_message_t hb;
       memset(&hb, 0, sizeof(hb));
@@ -458,20 +472,23 @@ static void pylontech_can_task(void* arg) {
       last_log_err = link.bus_errors;
       float per_min = elapsed ? (d_rx * 60000.0f / (float)elapsed) : 0.0f;
       if (is_valid) {
-        printInfo("[CAN] rx +%u (%.0f/min) err +%u missed %u recov %u | "
+        printInfo("[CAN] rx +%u (%.0f/min) err +%u REC %u TEC %u missed %u recov %u tx_fail %u | "
                   "%.2f V %+.1f A %.1f C SoC %d %% SoH %d %% CCL %.1f A DCL %.1f A "
                   "prot 0x%04X alarm 0x%04X flags 0x%02X",
                   (unsigned)d_rx, per_min, (unsigned)d_err,
+                  (unsigned)link.rx_err, (unsigned)link.tx_err,
                   (unsigned)link.rx_missed, (unsigned)link.recoveries,
+                  (unsigned)link.tx_failed,
                   scratch.voltage_v, scratch.current_a, scratch.temp_c,
                   scratch.soc, scratch.soh, scratch.ccl_a, scratch.dcl_a,
                   (unsigned)scratch.protection, (unsigned)scratch.alarm,
                   scratch.request_flags);
       } else {
-        printInfo("[CAN] rx +%u err +%u missed %u recov %u state %d | link down, "
-                  "last frame %lu s ago",
-                  (unsigned)d_rx, (unsigned)d_err, (unsigned)link.rx_missed,
-                  (unsigned)link.recoveries, (int)link.state,
+        printInfo("[CAN] rx +%u err +%u REC %u TEC %u missed %u recov %u tx_fail %u state %d | "
+                  "link down, last frame %lu s ago",
+                  (unsigned)d_rx, (unsigned)d_err,
+                  (unsigned)link.rx_err, (unsigned)link.tx_err, (unsigned)link.rx_missed,
+                  (unsigned)link.recoveries, (unsigned)link.tx_failed, (int)link.state,
                   link.last_rx_ms ? (unsigned long)((millis() - link.last_rx_ms) / 1000) : 0UL);
       }
     }
@@ -481,6 +498,13 @@ static void pylontech_can_task(void* arg) {
     if (have_status) {
       link.rx_missed = st.rx_missed_count;
       link.bus_errors = st.bus_error_count;
+      // REC and TEC are the CAN error counters themselves, not running totals:
+      // each error adds to them and each success takes away, so they say
+      // whether the controller is currently reacting to something on the wire.
+      // REC climbing while nothing is being received means the receiver is
+      // finding frame-shaped junk on an idle bus.
+      link.rx_err = (uint8_t)st.rx_error_counter;
+      link.tx_err = (uint8_t)st.tx_error_counter;
       link.tx_failed = st.tx_failed_count + tx_enqueue_failed;
       link.state = (uint8_t)st.state;
     }
@@ -488,6 +512,39 @@ static void pylontech_can_task(void* arg) {
     g_can_link = link;
     if (g_can_mutex) xSemaphoreGive(g_can_mutex);
   }
+}
+
+// Hold the bus dominant for CAN_BUS_RESET_DOMINANT_MS, then bring the driver
+// back. This is the accidental effect of an ESP32 reboot made deliberate: from
+// reset until twai_driver_install() claims GPIO12, the 2.2 kOhm pull-down keeps
+// TJA1050's TXD low, which is dominant, and jams the bus. Every observed
+// recovery of a silent pack followed a boot with a jam of that shape; the one
+// boot with a short jam did not bring it back.
+//
+// Any other node reaches bus-off within a millisecond of this, which is exactly
+// the point: the pack is already silent, and a forced bus-off followed by a
+// clean idle bus is the only thing that has ever restarted it. Do not call this
+// while the link is healthy.
+bool pylontech_can_force_bus_reset() {
+  if (g_tx_pin < 0) return false;
+  printWarning("[CAN] forcing bus reset: dominant for %d ms",
+               CAN_BUS_RESET_DOMINANT_MS);
+
+  twai_stop();
+  twai_driver_uninstall();
+
+  // Drive TXD low by hand: low is dominant on the TJA1050.
+  pinMode((gpio_num_t)g_tx_pin, OUTPUT);
+  digitalWrite((gpio_num_t)g_tx_pin, LOW);
+  vTaskDelay(pdMS_TO_TICKS(CAN_BUS_RESET_DOMINANT_MS));
+  // Release to recessive before the driver takes over, so the bus goes idle
+  // cleanly rather than glitching through another dominant edge.
+  digitalWrite((gpio_num_t)g_tx_pin, HIGH);
+  vTaskDelay(pdMS_TO_TICKS(50));
+
+  bool ok = driver_start();
+  printInfo("[CAN] bus reset done, driver %s", ok ? "restarted" : "FAILED to restart");
+  return ok;
 }
 
 void pylontech_can_init(int tx_pin, int rx_pin) {

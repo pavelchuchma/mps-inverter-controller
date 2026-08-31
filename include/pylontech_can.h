@@ -74,7 +74,11 @@ struct PylontechCanState {
 struct PylontechCanLink {
   uint32_t rx_frames;      // total received since boot
   uint32_t rx_missed;      // driver rx-queue overflow
-  uint32_t bus_errors;
+  uint32_t bus_errors;     // count of (bit, stuff, CRC, form, ACK) errors; the
+                           // driver does not say which, so read it next to the
+                           // two counters below
+  uint8_t rx_err;          // CAN receive error counter (REC), live not cumulative
+  uint8_t tx_err;          // CAN transmit error counter (TEC), live not cumulative
   uint32_t recoveries;     // bus-off recoveries performed
   uint32_t tx_failed;      // 0x305 heartbeats that did not go out
   uint32_t rejected;       // bursts dropped by the range check (stage 1 only)
@@ -116,3 +120,9 @@ void pylontech_can_get_link(PylontechCanLink* out);
 // Thread-safe copy of the raw payload table; `out` holds CAN_RAW_SLOTS entries.
 // Unused slots have id == 0.
 void pylontech_can_get_raw(PylontechCanRaw* out);
+
+// Hold the bus dominant for two seconds, then restart the driver. Forces every
+// other node into bus-off and then hands it a clean idle bus - the only thing
+// that has so far restarted a pack that has stopped broadcasting. Blocks for
+// about two seconds. Only for a link that is already dead.
+bool pylontech_can_force_bus_reset();
