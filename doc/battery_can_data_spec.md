@@ -258,6 +258,53 @@ and should be cut back to transitions only, matching the app.log policy below �
 `/can` carries the detail on demand, and `pio remote device monitor` is still
 there if a genuine frame-by-frame trace is ever needed again.
 
+## Bring-up diagnostics beyond `/can`
+
+Three things were added while getting the link stable. All three are cheap
+enough to leave in, and each exists because a specific question could not be
+answered remotely.
+
+**Live `0x351` trace on Serial** (`CAN_TRACE_LIMITS`). One line per burst, so
+every 2 s, printed via `Serial.printf` and deliberately **not** `printInfo()` —
+per-frame writes to flash are what constraint 4 forbids, and what cost the log
+its history once already.
+
+```
+[CAN] 0x351 dlc=8 raw 10 02 C8 00 E8 03 C2 01  CVL 52.8 V  CCL 20.0 A  DCL 100.0 A
+```
+
+**A 20-minute health line into `app.log`** (`CAN_LOG_INTERVAL_MS`). Deltas, not
+running totals: reading a day at once, what matters is the rate. 72 lines a day
+at ~150 B is ~10 kB, well inside the 100 kB rotation.
+
+```
+[CAN] rx +3600 (180/min) err +12 missed 0 recov 0 | 50.29 V +2.9 A 18.3 C
+      SoC 89 % SoH 100 % CCL 20.0 A DCL 100.0 A prot 0x0000 alarm 0x0000 flags 0xC0
+```
+
+When the link is down the decoded half is replaced by the age of the last frame,
+because publishing stale values next to a dead link is the same mistake `/can`
+made by printing zeros.
+
+**A runtime mute for both serial links** — `{"name":"serial_links","value":0|1}`
+on `/cmd`, state visible as `slp` in `/status`. Both RS232 links share the 15 m
+cable with the CAN pair, and
+[`rj45_cable_wiring.md`](rj45_cable_wiring.md) named that crosstalk the first
+suspect for CAN bus errors; this is how that got tested without a site visit.
+It was exonerated, but the switch stays for the next question of that shape.
+
+Two details make it safe to leave in a system nobody can reach:
+
+- **Pausing clears the validity flags**, so `relay.cpp` forces the boiler off
+  rather than regulating on a snapshot that has stopped advancing. Merely
+  skipping the polling would have left the flags true and the boiler running on
+  frozen data.
+- **Both links auto-resume after 30 minutes.** A mute must not be able to
+  outlive the session that set it — if the connection drops mid-test, the site
+  comes back on its own. `inverter_query_raw()` also refuses while paused, so a
+  browser hitting the settings page cannot put RS232 back on the cable and
+  spoil a measurement.
+
 ## Storage tiers
 
 Four tiers, from "never stored" to "stored forever":

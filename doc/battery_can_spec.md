@@ -189,6 +189,68 @@ so they are not derived measurements. Neither is decoded or stored; they are
 recorded here so that a future firmware change cannot quietly "fix" the parser
 into reading them as something they are not.
 
+### The pack stops broadcasting for hours, and it is not sleep
+
+It went silent for **6 h 42 min** overnight (00:33 → 07:15). The obvious reading
+— that the pack sleeps while idle at about −1 A and wakes with the morning
+charge — **does not survive the data**: the console link recorded charging
+starting around 06:30, three quarters of an hour before CAN came back. Sunrise
+is not the trigger.
+
+What the returns do correlate with is an **ESP32 restart**. Both observed
+recoveries followed one within ~90 s — a reboot at 00:14 gave frames at 00:16,
+one at 07:14 gave frames at 07:15:28 — and during the first of those both serial
+links were running normally, so the runtime mute is not the common factor
+either.
+
+One mechanism to check before looking further, because it sits in this document
+already: `TWAI_TX` is GPIO12 with a 2.2 kΩ pull-down, needed so the board boots
+at all (see [Pin assignment rationale](#pin-assignment-rationale)). TJA1050
+reads `TXD` **low as dominant**, so from reset until the TWAI driver takes the
+pin — a second or more — the transceiver drives the bus dominant and jams it.
+The pin analysis above weighs only the strapping behaviour and does not mention
+this side effect.
+
+It does not cleanly explain a *recovery*, though, and it cuts the other way:
+the same jam should knock a transmitting pack into bus-off, which is what
+appears to have happened after the reboot at 00:30, with the pack dying three
+minutes later. So the mechanism is a candidate for the faults, not obviously for
+the returns.
+
+**Not established.** The next cheap test is to restart the ESP32 while the link
+is silent and change nothing else; if frames return within ~90 s again, the
+correlation is real and worth chasing.
+
+Either way, `pylontech_can_valid()` is false for hours at a stretch, so a
+consumer must treat CAN as an *additional* input and never a required one —
+which is what [`battery_can_data_spec.md`](battery_can_data_spec.md) already
+calls fail-open for stage 3, now with a measured reason rather than a
+precaution. It also means an outage is not automatically a fault; the
+`chajda-can-link` series and the 20-minute health line in `app.log` are what
+tell the two apart.
+
+### Bus errors: bursty, source not identified
+
+The receiver logs roughly one bus error per minute while frames are flowing,
+arriving in bursts rather than steadily — long stretches of nothing, then twenty
+in two minutes. No frames are lost to it: `rx_missed` stays 0, the CRC discards
+what it should, and the link has held `valid` for hours at a stretch.
+
+Ruled out so far:
+
+- **RS232 crosstalk on the shared cable**, the documented first suspect. Muting
+  both serial links did not reduce the rate — see
+  [`rj45_cable_wiring.md`](rj45_cable_wiring.md).
+- **Relay switching** (boiler, mobile charger). The largest burst observed fell
+  in a window where the boiler was off and nothing was switching.
+- **The morning charge current**, as a trigger for the pack to start talking —
+  charging began about 45 minutes before the link returned.
+
+Still unchecked: **termination at the battery end**, which is the leading
+candidate and needs a measurement on site (RJ45 pin 4 ↔ pin 5, battery off).
+Reflections on 15 m of unterminated line would fit the symptom, though not
+obviously the bursts.
+
 ## Frame reference
 
 **Source: `CAN-Bus-protocol-PYLON-low-voltage-V1.2-20180408.pdf`** — the vendor

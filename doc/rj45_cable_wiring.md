@@ -125,14 +125,38 @@ stays empty. A straight-through plug would be actively harmful:
 The cable *is* the CAN bus, with exactly one node at each end — the correct
 topology, no stubs. The TJA1050 module must therefore sit directly at the ESP
 board's RJ45 jack, not on a branch. Its on-board 120 Ω terminates the ESP end;
-the battery end is terminated by the BMS when DIP2 is at 0 (see
-[`battery_can_spec.md`](battery_can_spec.md)). No further resistors.
+the battery end is terminated by the BMS when DIP2 is at 0. **This is
+unverified.** The cross-reference used to point at `battery_can_spec.md`, which
+carries no DIP documentation at all and asks for a measurement instead: RJ45
+pin 4 ↔ pin 5 with the battery switched off, where 120 Ω means the BMS
+terminates and an open circuit means a second resistor is needed. Neither the
+switch position nor the measurement has been checked on site, and after the
+crosstalk result below this is the leading remaining candidate for the CAN bus
+errors.
 
 The console link runs 115200 baud at ±12 V RS232 swing right next to the CAN
 pair. CAN is differential and CRC-protected, so this should be tolerable, but it
 is the first suspect if CAN error counters climb. The console link itself
 already sees roughly one corrupted byte per 10 kB over this cable, which is why
 `pylontech_comm.cpp` uses consensus voting.
+
+> **Tested, and it is not the culprit.** CAN error counters did climb, so both
+> RS232 links were muted at runtime (`serial_links` on `/cmd`) while the pack
+> was broadcasting, then restored, with the pack awake and charging throughout:
+>
+> | serial links | duration | bus errors | rate |
+> |---|---|---|---|
+> | muted | 16 min | 22 | 1.4 / min |
+> | active | 17.5 min | 16 | 0.9 / min |
+>
+> Same order of magnitude, and if anything worse with the cable quiet. The
+> errors arrive in bursts either way, and the largest burst — 21 in two minutes
+> — fell inside the *muted* window, with the boiler off and no relay switching
+> either. Restoring the RS232 traffic did not disturb the pack at all: it stayed
+> valid across the transition, no bus-off, no missed frames.
+>
+> So the RS232 traffic on this cable is exonerated. Whatever produces the bursts
+> is something else, and termination (above) has not been checked.
 
 ## Bring-up checklist
 
