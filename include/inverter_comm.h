@@ -53,6 +53,18 @@ void inverter_comm_init(int rx_pin, int tx_pin);
 bool inverter_get_status(InverterState* out);
 // Thread-safe read of the inverter data validity flag.
 bool inverter_data_valid();
+
+// Temporarily silence this link's RS232 traffic. Both serial links share the
+// 15 m cable with the CAN pair, and the console link's 115200 baud RS232 swing
+// is the first suspect for crosstalk into it (doc/rj45_cable_wiring.md), so
+// muting them is how that gets tested without a trip to the site.
+//
+// Pausing clears the validity flag, so relay.cpp forces the boiler off rather
+// than regulating on a frozen snapshot. `max_ms` is an auto-resume deadline:
+// the link brings itself back even if the operator loses connectivity, which
+// matters because nobody can reach the hardware.
+void inverter_comm_set_paused(bool paused, uint32_t max_ms);
+bool inverter_comm_paused();
 // Thread-safe read of the latest battery discharge current [A].
 float inverter_batt_discharge_current();
 bool inverter_get_mode(char* out_code, char* out_name, size_t name_cap);

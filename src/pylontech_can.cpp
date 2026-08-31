@@ -18,6 +18,19 @@
 // Bus health line interval.
 #define CAN_STATUS_INTERVAL_MS 30000
 
+// Periodic health line into app.log, so a day of link behaviour can be read
+// back after the fact. Deltas rather than cumulative totals: what matters when
+// reading a day at once is the rate, not the running count. 72 lines a day at
+// ~150 B is ~10 kB, comfortably inside the 100 kB the log rotates at, and far
+// away from the per-frame writes constraint 4 of the data spec forbids.
+#define CAN_LOG_INTERVAL_MS (20UL * 60UL * 1000UL)
+
+// Trace every 0x351 to the serial monitor, so the link can be watched live
+// during bring-up. 0x351 arrives once per burst (every 2 s on this pack), so
+// the cost is negligible - and it goes to Serial only, never through
+// printInfo(): nothing per-frame may reach flash.
+#define CAN_TRACE_LIMITS 1
+
 // How often 0x305 is retried while the bus is silent, in case the reply is
 // what wakes the pack. See the transmit site for why this is not 1 Hz.
 #define CAN_WAKE_PROBE_INTERVAL_MS 30000
@@ -136,6 +149,12 @@ static uint8_t decode_frame(const twai_message_t& m, PylontechCanState* s, uint3
       s->ccl_a = i16le(d + 2) / 10.0f;
       s->dcl_a = i16le(d + 4) / 10.0f;
       s->limits_ts_ms = now;
+#if CAN_TRACE_LIMITS
+      Serial.printf("[CAN] 0x351 dlc=%d raw", m.data_length_code);
+      for (int i = 0; i < m.data_length_code; ++i) Serial.printf(" %02X", d[i]);
+      Serial.printf("  CVL %.1f V  CCL %.1f A  DCL %.1f A\n",
+                    s->charge_v, s->ccl_a, s->dcl_a);
+#endif
       return CAN_GROUP_LIMITS;
     case CAN_ID_SOC:
       if (m.data_length_code < 4) break;
@@ -287,6 +306,10 @@ static void pylontech_can_task(void* arg) {
   // that failed on the wire; link.tx_failed is the sum of the two.
   uint32_t tx_enqueue_failed = 0;
 
+  unsigned long last_log_ms = millis();
+  uint32_t last_log_rx = 0;
+  uint32_t last_log_err = 0;
+
   unsigned long recover_interval_ms = CAN_RECOVER_MIN_INTERVAL_MS;
   unsigned long last_recover_ms = 0;
   unsigned long last_busoff_log_ms = 0;
@@ -424,6 +447,33 @@ static void pylontech_can_task(void* arg) {
     if (millis() - last_status >= CAN_STATUS_INTERVAL_MS) {
       last_status = millis();
       print_bus_status("status:");
+    }
+
+    if (millis() - last_log_ms >= CAN_LOG_INTERVAL_MS) {
+      unsigned long elapsed = millis() - last_log_ms;
+      last_log_ms = millis();
+      uint32_t d_rx = link.rx_frames - last_log_rx;
+      uint32_t d_err = link.bus_errors - last_log_err;
+      last_log_rx = link.rx_frames;
+      last_log_err = link.bus_errors;
+      float per_min = elapsed ? (d_rx * 60000.0f / (float)elapsed) : 0.0f;
+      if (is_valid) {
+        printInfo("[CAN] rx +%u (%.0f/min) err +%u missed %u recov %u | "
+                  "%.2f V %+.1f A %.1f C SoC %d %% SoH %d %% CCL %.1f A DCL %.1f A "
+                  "prot 0x%04X alarm 0x%04X flags 0x%02X",
+                  (unsigned)d_rx, per_min, (unsigned)d_err,
+                  (unsigned)link.rx_missed, (unsigned)link.recoveries,
+                  scratch.voltage_v, scratch.current_a, scratch.temp_c,
+                  scratch.soc, scratch.soh, scratch.ccl_a, scratch.dcl_a,
+                  (unsigned)scratch.protection, (unsigned)scratch.alarm,
+                  scratch.request_flags);
+      } else {
+        printInfo("[CAN] rx +%u err +%u missed %u recov %u state %d | link down, "
+                  "last frame %lu s ago",
+                  (unsigned)d_rx, (unsigned)d_err, (unsigned)link.rx_missed,
+                  (unsigned)link.recoveries, (int)link.state,
+                  link.last_rx_ms ? (unsigned long)((millis() - link.last_rx_ms) / 1000) : 0UL);
+      }
     }
 
     // Publish the counters. The driver keeps its own cumulative totals for the

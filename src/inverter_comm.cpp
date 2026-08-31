@@ -1,5 +1,6 @@
 #include "inverter_comm.h"
 #include <HardwareSerial.h>
+#include "utils.h"
 
 static SemaphoreHandle_t g_inv_mutex = NULL;
 // Serializes raw access to Serial1 (TX+RX) between the background poll task and
@@ -287,10 +288,40 @@ static void print_status_and_mode_snapshot() {
 }
 
 // Background task that queries QMOD and QPIGS periodically
+// See inverter_comm_set_paused() in the header for why this exists.
+static volatile bool g_inv_paused = false;
+static volatile uint32_t g_inv_resume_at_ms = 0;
+
+void inverter_comm_set_paused(bool paused, uint32_t max_ms) {
+  g_inv_resume_at_ms = paused ? (millis() + max_ms) : 0;
+  g_inv_paused = paused;
+  if (paused) {
+    if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
+    g_inverter_data_valid = false;
+    if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
+  }
+}
+
+bool inverter_comm_paused() { return g_inv_paused; }
+
 static void inverter_task(void* arg) {
   (void)arg;
   uint8_t consec_fails = 0;
   for (;;) {
+    if (g_inv_paused) {
+      if ((int32_t)(millis() - g_inv_resume_at_ms) >= 0) {
+        g_inv_paused = false;
+        printInfo("[INV] serial link auto-resumed");
+        continue;
+      }
+      // Keep the data invalid while muted: a frozen snapshot left valid would
+      // have relay.cpp regulating on it instead of failing the boiler off.
+      if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
+      g_inverter_data_valid = false;
+      if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
+      vTaskDelay(pdMS_TO_TICKS(500));
+      continue;
+    }
     // Query inverter
     // QMOD
     String payload;
@@ -378,6 +409,9 @@ float inverter_batt_discharge_current() {
 
 bool inverter_query_raw(const char* cmd, String& out_payload) {
   if (!cmd) return false;
+  // An on-demand query from the web UI would put traffic back on the shared
+  // cable and spoil a crosstalk measurement in progress.
+  if (g_inv_paused) return false;
   // Synchronous, on-demand query (e.g. QPIRI/QFLAG from the web handler).
   // Blocks up to ~1s while serialized against the background poll task.
   return send_command_and_get_payload(String(cmd), out_payload);

@@ -259,10 +259,40 @@ static void print_status_snapshot() {
   Serial.println("-------------------------------");
 }
 
+// See pylontech_comm_set_paused() in the header for why this exists.
+static volatile bool g_pylon_paused = false;
+static volatile uint32_t g_pylon_resume_at_ms = 0;
+
+void pylontech_comm_set_paused(bool paused, uint32_t max_ms) {
+  g_pylon_resume_at_ms = paused ? (millis() + max_ms) : 0;
+  g_pylon_paused = paused;
+  if (paused) {
+    if (g_pylon_mutex) xSemaphoreTake(g_pylon_mutex, portMAX_DELAY);
+    g_pylontech_data_valid = false;
+    if (g_pylon_mutex) xSemaphoreGive(g_pylon_mutex);
+  }
+}
+
+bool pylontech_comm_paused() { return g_pylon_paused; }
+
 static void pylontech_task(void* arg) {
   (void)arg;
   uint8_t consec_fails = 0;
   for (;;) {
+    if (g_pylon_paused) {
+      if ((int32_t)(millis() - g_pylon_resume_at_ms) >= 0) {
+        g_pylon_paused = false;
+        printInfo("[BAT] serial link auto-resumed");
+        continue;
+      }
+      // Keep the data invalid while muted, so the boiler fails off instead of
+      // regulating on a snapshot that has stopped advancing.
+      if (g_pylon_mutex) xSemaphoreTake(g_pylon_mutex, portMAX_DELAY);
+      g_pylontech_data_valid = false;
+      if (g_pylon_mutex) xSemaphoreGive(g_pylon_mutex);
+      vTaskDelay(pdMS_TO_TICKS(500));
+      continue;
+    }
     // Read 'pwr' back-to-back (no inter-attempt delay) and accept a value only
     // once PYLONTECH_CONSENSUS_COUNT consecutive frames agree. A failed read or
     // a value that differs from the previous one resets the streak. Give up
