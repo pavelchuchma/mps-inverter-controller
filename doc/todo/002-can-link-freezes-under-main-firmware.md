@@ -195,11 +195,18 @@ Open leads, roughly in order:
    active transmission into the dead bus ended without a revival. A build
    with the probe disabled would give the pack a perfectly silent bus for
    hours and settle this.
-4. **Reviving via the console link** — the protocol has `trst` (Test Soft
-   Reset). Deployed 2026-09-01 ~16:42 as `POST /cmd {"name":"bat_trst"}` on
-   `diag/can-sniffer-instrumented` (`35c6c87`): the webserver sets a flag,
-   the battery polling task sends `trst` within one poll cycle and logs the
-   raw response. **Armed but not yet fired.**
+4. **Reviving via the console link — tried, no effect.** `trst` (Test Soft
+   Reset) deployed as `POST /cmd {"name":"bat_trst"}` on
+   `diag/can-sniffer-instrumented` (`35c6c87`) and fired twice (2026-09-01
+   17:17 and 17:22). Both times the console answered only `trst @` — the
+   echo and the `@` response marker, with no payload and no
+   `Command completed successfully` — and the `pwr` polling never missed a
+   beat, so the BMS did **not** reboot. Either `trst` silently requires
+   admin mode (`login [password]`), or "Test Soft Reset" does not mean the
+   MCU. CAN stayed silent either way.
+5. **Physical power cycle of the pack** — if the morning charge does not
+   wake it, this is what is left. Combine with the termination measurement
+   (lead 1) on the same visit.
 
 Yesterday the pack came back at 07:15 (after ~6.5 h dead, morning charge
 underway) and 09:52; whether time/SoC/charge state is the real revival
