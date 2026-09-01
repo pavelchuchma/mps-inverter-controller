@@ -143,14 +143,25 @@ by silence on the bus, or whether the receiver goes deaf mid-traffic.
 
 ## Current state
 
-- **On the device:** `diag/can-sniffer-instrumented` (`d555697`), left running
-  deliberately to extend the control observation. `main` is *not* deployed.
-- **`main`:** `74e7279`, all diagnostics committed, nothing pushed.
-- **Worktree:** `/tmp/can-sniffer`. macOS runs `com.apple.tmp_cleaner` daily at
-  midnight, so recreate it from the branch if it disappears — the source is in
-  git, so nothing is lost.
+- **2026-09-01 morning: the control extended itself overnight.** The sniffer
+  ran 09:52 → 00:00 (14 h, ended only by the scheduled midnight restart) and
+  again 00:00 → 07:35 (7.6 h, still clean at flash time): rate 175–185/min,
+  no gap over 90 s, TEC 0, tx_failed 0. One rx-queue overflow at 00:14
+  (missed 6, a single burst) with no effect on the link. Full log saved to
+  `logs/app-2026-08-31_sniffer-control.log` (git-ignored).
+- **The proposed fix is implemented and deployed** (`7488cfe`, flashed
+  2026-09-01 ~07:45): receive timeout back to 200 ms, no shared state on the
+  receive path (raw table task-local, one mutex take per burst), status
+  polling only in the periodic branches, the 1 Hz peer-gated 0x305 replaced
+  by the sniffer's silence probe (single-shot), and CAN init moved back after
+  `initializeWiFi()` — the sniffer's long-jam boot position, the only boot
+  shape that has ever revived a silent pack.
+- **Being watched** through 2026-09-01: if the reshaped loop matches the
+  sniffer's hold time, the freeze was one of the three suspects above; they
+  can then be reintroduced one at a time if the exact culprit matters.
+- **`main`:** `7488cfe`, nothing pushed.
 - **Temporary settings to revert** once this is closed: `app.log` cap raised
-  from 100 kB to 700–768 kB, and the health line at 1 minute instead of 20.
+  from 100 kB to 768 kB, and the health line at 1 minute instead of 20.
 
 ## Related
 

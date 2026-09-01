@@ -6,3 +6,4 @@
 .idea
 include/credentials.h
 /.claude
+/logs/
