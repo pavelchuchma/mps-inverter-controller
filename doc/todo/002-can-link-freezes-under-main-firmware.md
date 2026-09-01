@@ -191,10 +191,15 @@ Open leads, roughly in order:
    data point only (yesterday's 08:19 death was ~28 min after a boiler OFF),
    but the boiler is a switched resistive load on the same site wiring —
    worth watching for on the next freeze.
-3. **Does our probing keep the pack down?** Every observed period with
-   active transmission into the dead bus ended without a revival. A build
-   with the probe disabled would give the pack a perfectly silent bus for
-   hours and settle this.
+3. **Does our probing keep the pack down? Being tested since 2026-09-01
+   18:30.** Zero-transmit build deployed (`1777007` on
+   `diag/can-sniffer-instrumented`): the 0x305 probe is gone entirely, the
+   bus gets absolute silence (minute lines confirm `bus_err 0 tx_failed 0`
+   since boot, vs. 16 bus errors the probing builds caused immediately).
+   Only the hardware ACK of normal mode remains, emitted only while the
+   pack itself transmits. If the pack wakes overnight where 20k+ probes
+   failed, the probe was hurting; if it wakes with the morning charge as
+   yesterday, time/charge state is the variable.
 4. **Reviving via the console link — tried, no effect.** `trst` (Test Soft
    Reset) deployed as `POST /cmd {"name":"bat_trst"}` on
    `diag/can-sniffer-instrumented` (`35c6c87`) and fired twice (2026-09-01
