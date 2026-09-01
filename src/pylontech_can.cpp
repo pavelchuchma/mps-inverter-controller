@@ -11,8 +11,8 @@
 #define CAN_ID_REQUESTS 0x35C // charge / discharge enable request
 #define CAN_ID_VENDOR 0x35E   // manufacturer string "PYLON"
 
-// Inverter reply, 8 zero bytes at 1 Hz. The vendor spec states it plainly, so
-// it goes out unconditionally from task start.
+// Inverter reply, 8 zero bytes at 1 Hz. Sent only as a silence probe — see
+// the transmit policy below.
 #define CAN_ID_HEARTBEAT 0x305
 
 // Bus health line interval.
@@ -41,27 +41,27 @@
 #define CAN_BUS_RESET_DOMINANT_MS 2000
 
 // --- transmit: the 0x305 inverter reply ------------------------------------
-// Back on, and the history matters because it nearly ended the link.
+// The sniffer's policy, adopted after it out-ran every variant of this module
+// (todo 002): nothing is EVER transmitted while the pack broadcasts. The
+// instrumented sniffer held the link for 13+ hours without putting a single
+// frame on the wire, so the vendor's 1 Hz inverter reply is demonstrably not
+// needed to keep this pack talking — and the only runs that never received a
+// frame at all were the ones with the 1 Hz reply re-enabled.
 //
-// The vendor spec requires the inverter to reply every second. Sending it
-// unconditionally (step 1.2.5 of the data spec) was catastrophic: nothing
-// acknowledged it, the controller auto-retried at bus speed, and a single
-// queued frame walked the error counter to bus-off in milliseconds while
-// spraying error flags that corrupted the pack's own frames. It was disabled
-// entirely to get out of that hole.
+// What remains is the sniffer's silence probe: after
+// CAN_SILENCE_BEFORE_HEARTBEAT_MS without a frame, send 0x305 at 1 Hz until
+// a frame arrives (in case 0x305 is what wakes a quiet BMS). Its tx counters
+// double as the freeze diagnostic — after a silent period, tx_failed rising
+// means the bus is genuinely dead, while successful probes mean the pack is
+// acknowledging and only our receiver has gone deaf.
 //
-// Two changes make it safe now, and both are already proven:
-//   - TWAI_MSG_FLAG_SS, so a missing acknowledge costs one error-counter
-//     increment instead of an unbounded retry storm;
-//   - peer_present gating, so the full 1 Hz rate only goes out while the pack
-//     is actually broadcasting, i.e. while there is someone there to ack it.
-//
-// What is being tested by turning it back on: the pack broadcasts for 2 to 50
-// minutes and then stops, with our side perfectly clean (state running, no
-// missed frames, no recoveries, a handful of bus errors). A BMS that stops
-// talking because the inverter stopped answering is ordinary behaviour, and we
-// are the inverter that stopped answering.
-#define CAN_SEND_HEARTBEAT 1
+// One deliberate deviation from the sniffer: the probe is single-shot
+// (TWAI_MSG_FLAG_SS). The sniffer's plain transmit auto-retried into the
+// silent bus at bus speed and rode the error counter to bus-off within
+// milliseconds of each probe; single-shot costs one increment (TEC +8)
+// instead, so bus-off takes ~30 s of probing and the periodic recovery check
+// keeps up with it — and only ever during silence.
+#define CAN_SILENCE_BEFORE_HEARTBEAT_MS 10000
 
 // Bus-off recovery back-off. With no peer on the wire every frame we send goes
 // unacknowledged, the error counter runs away and the controller drops back to
@@ -127,26 +127,29 @@ static bool state_is_fresh(const PylontechCanState& s, uint32_t now) {
       && (now - s.measured_ts_ms) < CAN_STALE_MS;
 }
 
-// Record the raw payload for /can. Kept outside the range check so a rejected
-// burst is still visible byte for byte, which is the whole point of the check.
-static void record_raw(const twai_message_t& m, uint32_t now) {
+// Record the raw payload for /can into the task-local table; the table is
+// published to g_can_raw once per burst, not per frame — todo 002 put the
+// per-frame mutex take on the suspect list, so the receive path stays free of
+// any shared state. Kept outside the range check so a rejected burst is still
+// visible byte for byte, which is the whole point of the check.
+static void record_raw(PylontechCanRaw* raw, const twai_message_t& m, uint32_t now) {
   int free_slot = -1;
   for (int i = 0; i < CAN_RAW_SLOTS; ++i) {
-    if (g_can_raw[i].id == m.identifier) {
-      g_can_raw[i].dlc = m.data_length_code;
-      memcpy(g_can_raw[i].data, m.data, 8);
-      g_can_raw[i].ts_ms = now;
-      g_can_raw[i].count++;
+    if (raw[i].id == m.identifier) {
+      raw[i].dlc = m.data_length_code;
+      memcpy(raw[i].data, m.data, 8);
+      raw[i].ts_ms = now;
+      raw[i].count++;
       return;
     }
-    if (free_slot < 0 && g_can_raw[i].id == 0) free_slot = i;
+    if (free_slot < 0 && raw[i].id == 0) free_slot = i;
   }
   if (free_slot < 0) return;  // more identifiers than expected: keep the first six
-  g_can_raw[free_slot].id = m.identifier;
-  g_can_raw[free_slot].dlc = m.data_length_code;
-  memcpy(g_can_raw[free_slot].data, m.data, 8);
-  g_can_raw[free_slot].ts_ms = now;
-  g_can_raw[free_slot].count = 1;
+  raw[free_slot].id = m.identifier;
+  raw[free_slot].dlc = m.data_length_code;
+  memcpy(raw[free_slot].data, m.data, 8);
+  raw[free_slot].ts_ms = now;
+  raw[free_slot].count = 1;
 }
 
 // Decode one frame into the burst scratch. Scaling and byte order are the
@@ -292,18 +295,22 @@ static void pylontech_can_task(void* arg) {
   // Task-local working copies. `scratch` persists across bursts so a frame
   // group missing from one burst keeps its previous value and its own
   // timestamp; `burst` is the copy the current burst writes into, so a burst
-  // that fails the range check can be dropped whole.
+  // that fails the range check can be dropped whole. `raw` is the /can payload
+  // table, task-local for the same reason as everything else here: the receive
+  // path must not touch the mutex (todo 002).
   PylontechCanState scratch = {};
   PylontechCanState burst = {};
   PylontechCanLink link = {};
+  PylontechCanRaw raw[CAN_RAW_SLOTS] = {};
   uint8_t burst_groups = 0;
   bool burst_active = false;
   unsigned long burst_start_ms = 0;
-  unsigned long last_frame_ms = 0;
+  // Also arms the silence probe: initialized to now so a bus that is quiet
+  // from boot starts probing after the same 10 s the sniffer used.
+  unsigned long last_frame_ms = millis();
 
-#if CAN_SEND_HEARTBEAT
+  bool heartbeat_started = false;
   unsigned long last_heartbeat = 0;
-#endif
   unsigned long last_status = millis();
 
   // Transition tracking for the Serial/app.log lines. Per-frame printing is
@@ -329,13 +336,22 @@ static void pylontech_can_task(void* arg) {
 
   for (;;) {
     twai_message_t m;
-    if (twai_receive(&m, pdMS_TO_TICKS(20)) == ESP_OK) {
+    // 200 ms timeout, the sniffer's value. The 20 ms it briefly ran at meant
+    // ~50 wakeups/s of status polling and mutex traffic on an idle bus; the
+    // sniffer's cadence is the one proven to hold the link (todo 002). Burst
+    // gap detection still works: frames within a burst arrive back to back,
+    // and the 2 s between bursts dwarfs one blocked receive.
+    if (twai_receive(&m, pdMS_TO_TICKS(200)) == ESP_OK) {
       unsigned long now = millis();
       link.rx_frames++;
       link.last_rx_ms = now;
       last_frame_ms = now;
       // A frame proves there is a peer, so recovery can be prompt again.
       recover_interval_ms = CAN_RECOVER_MIN_INTERVAL_MS;
+      if (heartbeat_started) {
+        printInfo("[CAN] frames arriving, stopping the 0x305 silence probe");
+        heartbeat_started = false;
+      }
       if (!burst_active) {
         burst_active = true;
         burst_start_ms = now;
@@ -343,9 +359,7 @@ static void pylontech_can_task(void* arg) {
         burst_groups = 0;
       }
       burst_groups |= decode_frame(m, &burst, now);
-      if (g_can_mutex) xSemaphoreTake(g_can_mutex, portMAX_DELAY);
-      record_raw(m, now);
-      if (g_can_mutex) xSemaphoreGive(g_can_mutex);
+      record_raw(raw, m, now);
     }
 
     // End of burst: no frame for CAN_BURST_GAP_MS, or CAN_BURST_MAX_MS since
@@ -360,12 +374,18 @@ static void pylontech_can_task(void* arg) {
       accept = burst_in_range(burst, burst_groups);
       if (!accept) link.rejected++;
 #endif
+      if (accept) scratch = burst;
+      // The one mutex take of the steady state, every ~2 s: raw payloads go
+      // out even for a rejected burst (that is what the range check is for),
+      // the decoded state only when accepted, and the link counters ride
+      // along — the driver-side fields in them refresh in the minute branch,
+      // so /can sees those at most a minute stale.
+      if (g_can_mutex) xSemaphoreTake(g_can_mutex, portMAX_DELAY);
+      memcpy(g_can_raw, raw, sizeof(g_can_raw));
+      if (accept) g_can_state = scratch;
+      g_can_link = link;
+      if (g_can_mutex) xSemaphoreGive(g_can_mutex);
       if (accept) {
-        scratch = burst;
-        if (g_can_mutex) xSemaphoreTake(g_can_mutex, portMAX_DELAY);
-        g_can_state = scratch;
-        if (g_can_mutex) xSemaphoreGive(g_can_mutex);
-
         if (burst_groups & CAN_GROUP_ALARMS) {
           if (have_prev_alarms
               && (scratch.protection != prev_protection || scratch.alarm != prev_alarm)) {
@@ -408,28 +428,16 @@ static void pylontech_can_task(void* arg) {
       }
     }
 
-    twai_status_info_t st;
-    bool have_status = (twai_get_status_info(&st) == ESP_OK);
-    bool bus_off = have_status && st.state == TWAI_STATE_BUS_OFF;
-
-#if CAN_SEND_HEARTBEAT
-    // Is anyone on the wire? Any frame will do — this asks whether there is
-    // someone to acknowledge, not whether the data set is complete.
-    bool peer_present = link.last_rx_ms != 0
-                     && millis() - link.last_rx_ms < CAN_STALE_MS;
-
-    // The vendor spec asks the inverter to reply every second, and while the
-    // pack is broadcasting that is free: it is there and it acknowledges. Into
-    // a silent bus the same frame is destructive — the controller retries an
-    // unacknowledged transmission at bus speed, so one queued frame walks the
-    // error counter to bus-off within milliseconds. Hence: full rate while the
-    // pack talks, a slow probe while it does not (in case 0x305 is what wakes
-    // it), and single-shot either way so a missing acknowledge costs one
-    // increment instead of a retry storm.
-    // Nothing goes out into a silent bus. A 30 s wake probe was tried and did
-    // nothing across 25 attempts, while adding error flags to a bus the pack
-    // needs quiet to recover on - 128 consecutive idle bit sequences.
-    if (peer_present && have_status && st.state == TWAI_STATE_RUNNING
+    // Silence probe, the sniffer's transmit policy — see the block comment at
+    // CAN_SILENCE_BEFORE_HEARTBEAT_MS. Never fires while frames arrive.
+    if (!heartbeat_started
+        && millis() - last_frame_ms > CAN_SILENCE_BEFORE_HEARTBEAT_MS) {
+      printWarning("[CAN] silent for %lu s, starting 0x305 probe at 1 Hz",
+                   (unsigned long)(CAN_SILENCE_BEFORE_HEARTBEAT_MS / 1000));
+      heartbeat_started = true;
+      last_heartbeat = 0;
+    }
+    if (heartbeat_started
         && millis() - last_heartbeat >= CAN_HEARTBEAT_INTERVAL_MS) {
       last_heartbeat = millis();
       twai_message_t hb;
@@ -439,33 +447,53 @@ static void pylontech_can_task(void* arg) {
       hb.ss = 1;  // single shot: the controller must not retry this
       if (twai_transmit(&hb, pdMS_TO_TICKS(100)) != ESP_OK) tx_enqueue_failed++;
     }
-#endif
 
-    if (bus_off && millis() - last_recover_ms >= recover_interval_ms) {
-      last_recover_ms = millis();
-      if (last_busoff_log_ms == 0
-          || millis() - last_busoff_log_ms >= CAN_BUSOFF_LOG_INTERVAL_MS) {
-        last_busoff_log_ms = millis();
-        printWarning("[CAN] bus-off (%u recoveries, %u frames received, retry every %lu s)",
-                     (unsigned)link.recoveries, (unsigned)link.rx_frames,
-                     recover_interval_ms / 1000);
-      }
-      if (recover_bus()) link.recoveries++;
-      recover_interval_ms *= 2;
-      if (recover_interval_ms > CAN_RECOVER_MAX_INTERVAL_MS) {
-        recover_interval_ms = CAN_RECOVER_MAX_INTERVAL_MS;
-      }
-      have_status = (twai_get_status_info(&st) == ESP_OK);
-    }
-
+    // The 30 s Serial line, and with it the only place bus-off is looked for.
+    // Bus-off can only be reached by transmitting, transmitting only happens
+    // during silence, and single-shot probes take ~30 s to get there — so this
+    // cadence keeps up, and the steady state polls no status at all (todo 002
+    // suspect 1).
     if (millis() - last_status >= CAN_STATUS_INTERVAL_MS) {
       last_status = millis();
       print_bus_status("status:");
+      twai_status_info_t st;
+      if (twai_get_status_info(&st) == ESP_OK
+          && st.state == TWAI_STATE_BUS_OFF
+          && millis() - last_recover_ms >= recover_interval_ms) {
+        last_recover_ms = millis();
+        if (last_busoff_log_ms == 0
+            || millis() - last_busoff_log_ms >= CAN_BUSOFF_LOG_INTERVAL_MS) {
+          last_busoff_log_ms = millis();
+          printWarning("[CAN] bus-off (%u recoveries, %u frames received, retry every %lu s)",
+                       (unsigned)link.recoveries, (unsigned)link.rx_frames,
+                       recover_interval_ms / 1000);
+        }
+        if (recover_bus()) link.recoveries++;
+        recover_interval_ms *= 2;
+        if (recover_interval_ms > CAN_RECOVER_MAX_INTERVAL_MS) {
+          recover_interval_ms = CAN_RECOVER_MAX_INTERVAL_MS;
+        }
+      }
     }
 
     if (millis() - last_log_ms >= CAN_LOG_INTERVAL_MS) {
       unsigned long elapsed = millis() - last_log_ms;
       last_log_ms = millis();
+      // Refresh the driver-side counters here, once a minute, for both the
+      // line below and /can. The driver keeps its own cumulative totals for
+      // the things it sees; the rest are ours. REC and TEC are the CAN error
+      // counters themselves, not running totals: each error adds to them and
+      // each success takes away, so they say whether the controller is
+      // currently reacting to something on the wire.
+      twai_status_info_t st;
+      if (twai_get_status_info(&st) == ESP_OK) {
+        link.rx_missed = st.rx_missed_count;
+        link.bus_errors = st.bus_error_count;
+        link.rx_err = (uint8_t)st.rx_error_counter;
+        link.tx_err = (uint8_t)st.tx_error_counter;
+        link.tx_failed = st.tx_failed_count + tx_enqueue_failed;
+        link.state = (uint8_t)st.state;
+      }
       uint32_t d_rx = link.rx_frames - last_log_rx;
       uint32_t d_err = link.bus_errors - last_log_err;
       last_log_rx = link.rx_frames;
@@ -491,26 +519,13 @@ static void pylontech_can_task(void* arg) {
                   (unsigned)link.recoveries, (unsigned)link.tx_failed, (int)link.state,
                   link.last_rx_ms ? (unsigned long)((millis() - link.last_rx_ms) / 1000) : 0UL);
       }
+      // Publish the refreshed counters. During normal traffic the burst
+      // commit republishes them every ~2 s anyway; this covers a silent bus,
+      // where /can would otherwise show counters frozen at the last burst.
+      if (g_can_mutex) xSemaphoreTake(g_can_mutex, portMAX_DELAY);
+      g_can_link = link;
+      if (g_can_mutex) xSemaphoreGive(g_can_mutex);
     }
-
-    // Publish the counters. The driver keeps its own cumulative totals for the
-    // things it sees; the rest are ours.
-    if (have_status) {
-      link.rx_missed = st.rx_missed_count;
-      link.bus_errors = st.bus_error_count;
-      // REC and TEC are the CAN error counters themselves, not running totals:
-      // each error adds to them and each success takes away, so they say
-      // whether the controller is currently reacting to something on the wire.
-      // REC climbing while nothing is being received means the receiver is
-      // finding frame-shaped junk on an idle bus.
-      link.rx_err = (uint8_t)st.rx_error_counter;
-      link.tx_err = (uint8_t)st.tx_error_counter;
-      link.tx_failed = st.tx_failed_count + tx_enqueue_failed;
-      link.state = (uint8_t)st.state;
-    }
-    if (g_can_mutex) xSemaphoreTake(g_can_mutex, portMAX_DELAY);
-    g_can_link = link;
-    if (g_can_mutex) xSemaphoreGive(g_can_mutex);
   }
 }
 

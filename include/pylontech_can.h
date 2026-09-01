@@ -17,8 +17,9 @@
 // on the battery's CAN port. CAN needs an acknowledge bit from a second node;
 // in listen-only mode the battery would never see one, would retransmit every
 // frame and drop into error-passive. Normal mode acknowledges, which is the
-// only thing this module puts on the wire — the 0x305 inverter reply is
-// currently disabled, see CAN_SEND_HEARTBEAT in pylontech_can.cpp.
+// only thing this module puts on the wire while the pack broadcasts — the
+// 0x305 inverter reply is sent only as a probe into a silent bus, see the
+// transmit policy in pylontech_can.cpp.
 // ---------------------------------------------------------------------------
 
 // This pack repeats the whole set every 2 s, not the 1 s the vendor documents
@@ -35,7 +36,7 @@
 #define CAN_BURST_GAP_MS 50
 #define CAN_BURST_MAX_MS 200
 
-// 0x305 inverter reply rate, used only when transmission is re-enabled.
+// 0x305 silence-probe rate, active only after 10 s without a frame.
 #define CAN_HEARTBEAT_INTERVAL_MS 1000
 
 // Decoded BMS state, committed once per burst so a reader never sees fields

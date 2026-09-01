@@ -166,22 +166,6 @@ void setup() {
   // Initialize webserver / LittleFS (web UI files in data/ will be uploaded to device)
   initWebServer();
 
-  // Battery CAN link: decode the BMS broadcast into a published state and
-  // reply with 0x305 at 1 Hz. Nothing consumes it yet — GET /can is where the
-  // decoding is checked, see doc/battery_can_data_spec.md commit 1.
-  //
-  // Started HERE, not down with the other comm links, and the position is
-  // load-bearing. TWAI_TX is GPIO12, which needs a 2.2 kOhm pull-down so the
-  // board boots at all, and TJA1050 reads TXD low as *dominant* — so from reset
-  // until twai_driver_install() claims the pin, the transceiver holds the bus
-  // dominant and jams it. Any other node on that bus reaches bus-off within a
-  // millisecond of that. Sitting after initializeWiFi() stretched the jam to
-  // ~16 s on every boot; here it is a fraction of a second.
-  //
-  // It must still follow initWebServer(), which mounts LittleFS, or the task's
-  // first app.log lines are dropped.
-  pylontech_can_init(BATTERY_CAN_TX_PIN, BATTERY_CAN_RX_PIN);
-
   initializeWiFi();
   // First wall-clock-stamped log line — NTP has been attempted by now, so
   // this entry is normally timestamped with real local time (unlike the
@@ -195,6 +179,22 @@ void setup() {
   server.begin();
 
   Serial.println("HTTP :80");
+
+  // Battery CAN link: decode the BMS broadcast into a published state.
+  // Nothing consumes it yet — GET /can is where the decoding is checked, see
+  // doc/battery_can_data_spec.md commit 1.
+  //
+  // Started HERE, after WiFi, and the position is load-bearing — it is the
+  // sniffer's, and the boot jam it produces is part of the proven shape
+  // (todo 002). TWAI_TX is GPIO12, which needs a 2.2 kOhm pull-down so the
+  // board boots at all, and TJA1050 reads TXD low as *dominant* — so from
+  // reset until twai_driver_install() claims the pin, the transceiver jams
+  // the bus, here for the ~16 s WiFi bring-up takes. Every observed revival
+  // of a pack that had stopped broadcasting followed a boot with a long jam
+  // of exactly this shape; the boots with a short jam (init before WiFi)
+  // never received a frame. It must also follow initWebServer(), which
+  // mounts LittleFS, or the task's first app.log lines are dropped.
+  pylontech_can_init(BATTERY_CAN_TX_PIN, BATTERY_CAN_RX_PIN);
 
   // Initialize relay outputs
   boilerRelayInit();
