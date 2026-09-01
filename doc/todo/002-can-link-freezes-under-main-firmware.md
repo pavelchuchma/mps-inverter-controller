@@ -196,15 +196,14 @@ Open leads, roughly in order:
    data point only (yesterday's 08:19 death was ~28 min after a boiler OFF),
    but the boiler is a switched resistive load on the same site wiring —
    worth watching for on the next freeze.
-3. **Does our probing keep the pack down? Being tested since 2026-09-01
-   18:30.** Zero-transmit build deployed (`1777007` on
-   `diag/can-sniffer-instrumented`): the 0x305 probe is gone entirely, the
-   bus gets absolute silence (minute lines confirm `bus_err 0 tx_failed 0`
-   since boot, vs. 16 bus errors the probing builds caused immediately).
-   Only the hardware ACK of normal mode remains, emitted only while the
-   pack itself transmits. If the pack wakes overnight where 20k+ probes
-   failed, the probe was hurting; if it wakes with the morning charge as
-   yesterday, time/charge state is the variable.
+3. **Does our probing keep the pack down? ANSWERED: no.** Zero-transmit
+   build (`1777007` on `diag/can-sniffer-instrumented`, deployed 18:30)
+   gave the pack ~3.5 hours of absolute bus silence (minute lines confirm
+   `bus_err` near zero and `tx_failed 0`) and it still did not come back
+   before it was powered off for the termination fix. Its CAN controller
+   was latched beyond anything the bus itself could undo — consistent with
+   lead 1 being the root cause. The zero-transmit policy stays anyway: the
+   probe never achieved anything and silence costs nothing.
 4. **Reviving via the console link — tried, no effect.** `trst` (Test Soft
    Reset) deployed as `POST /cmd {"name":"bat_trst"}` on
    `diag/can-sniffer-instrumented` (`35c6c87`) and fired twice (2026-09-01
@@ -237,9 +236,19 @@ variable is still unknown.
   by the sniffer's silence probe (single-shot), and CAN init moved back after
   `initializeWiFi()` — the sniffer's long-jam boot position, the only boot
   shape that has ever revived a silent pack.
-- **2026-09-01 13:30: link down since 07:52**, pack CAN-silent, ESP cycling
-  probe/recovery. Freeze log saved to
-  `logs/app-2026-09-01_reshaped-loop-freeze.log`.
+- **2026-09-01 evening: PAUSED for the hardware fix.** Battery disconnected,
+  the interconnect cable taken away to get a 120 Ω terminator fitted across
+  pins 4–5 at the battery end. Until it returns, the ESP runs the
+  zero-transmit build (`1777007`) with all three links down and spams
+  harmless [BAT]/[INV] warnings; everything of value is backed up under
+  `logs/`.
+- **Next visit checklist:** DIP back in its original position; cable pair
+  measures ~60 Ω with both ends connected (120 Ω new + 120 Ω on the TJA1050
+  module); power the pack on; expect frames in app.log within a minute of
+  the pack booting. Success criteria: background `bus_err` drops from ~1/min
+  to ~zero, and the link outlives the 22 h sniffer record.
+- Freeze log saved to `logs/app-2026-09-01_reshaped-loop-freeze.log`, the
+  trst/probing afternoon to `logs/app-2026-09-01_trst-attempts.log`.
 - **`main`:** `7488cfe` (+ docs), nothing pushed.
 - **Temporary settings to revert** once this is closed: `app.log` cap raised
   from 100 kB to 768 kB, and the health line at 1 minute instead of 20.
