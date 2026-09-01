@@ -195,8 +195,11 @@ Open leads, roughly in order:
    active transmission into the dead bus ended without a revival. A build
    with the probe disabled would give the pack a perfectly silent bus for
    hours and settle this.
-4. **Reviving via the console link** — if the RS232 protocol has a BMS
-   restart/reset command, it may be the only remote lever left.
+4. **Reviving via the console link** — the protocol has `trst` (Test Soft
+   Reset). Deployed 2026-09-01 ~16:42 as `POST /cmd {"name":"bat_trst"}` on
+   `diag/can-sniffer-instrumented` (`35c6c87`): the webserver sets a flag,
+   the battery polling task sends `trst` within one poll cycle and logs the
+   raw response. **Armed but not yet fired.**
 
 Yesterday the pack came back at 07:15 (after ~6.5 h dead, morning charge
 underway) and 09:52; whether time/SoC/charge state is the real revival
