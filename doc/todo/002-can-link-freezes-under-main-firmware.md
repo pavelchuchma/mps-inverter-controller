@@ -141,6 +141,67 @@ log and see whether it survives as long.
 will answer the one question this session could not: whether a freeze is preceded
 by silence on the bus, or whether the receiver goes deaf mid-traffic.
 
+## 2026-09-01: the reshaped loop died too — and the fall was finally captured
+
+The sniffer-shaped loop (`7488cfe`) went down 16 minutes after boot, so **the
+loop shape was not the cause** — all three steady-state suspects above are
+cleared. In hindsight there is a stronger argument that should have been made
+first: while frames flow, the only thing either firmware puts on the wire is
+the hardware-generated acknowledge bit. Software shape cannot be seen by the
+pack, so it could never have been what kills it. The sniffer's 22 clean hours
+were correlated with something else.
+
+What the freeze actually looks like, now that a minute line straddles it
+(07:52–07:53):
+
+```
+07:50:32  boiler relay ON, 500 W target (battery current 11.6 -> 1.7 A)
+07:52:03  rx +180  err +2   REC 0   TEC 0    — perfectly healthy
+07:52:46  last frame ever received
+07:52:56  link down; silence probe starts
+07:53:03  rx +128  err +12  REC 79  TEC 184  — the fall, mid-minute
+07:53:34  bus-off (probes into a dead bus)
+```
+
+**The receiver did not go deaf — it watched the bus die.** REC 79 with a
+burst of bus errors means the controller was actively receiving garbage as
+the pack fell off the wire. From then on every 0x305 probe (1/s, ~20 000 by
+13:30) went unacknowledged: there is no transmitter left on the bus. The BMS
+console link answered normally the whole time, and `/status` showed the
+battery charging and later Idle at 100 % — **the pack is alive; only its CAN
+interface stops.** The session-old open question is answered, and the todo's
+premise ("looks like ours, not the pack's") is inverted.
+
+The revival lore also broke today:
+
+- 13:25 ESP restart — now a long-jam boot again (init after WiFi) — did
+  *not* revive it (was 8/8 before);
+- 13:29 `can_bus_reset` (2 s dominant) did not either — and instead crashed
+  the ESP: with the 200 ms receive timeout the CAN task is almost always
+  inside `twai_receive()` when the webserver task uninstalls the driver →
+  `ESP_RST_PANIC`. See todo 003.
+
+Open leads, roughly in order:
+
+1. **Physical layer, back on top.** A healthy receiver watching the bus
+   degrade into an error storm is what a physical-layer fault looks like.
+   Termination at the battery end (DIP2, ~60 Ω across CAN-H/L) is still
+   unverified — measure on the next site visit.
+2. **The boiler relay switched to 500 W two minutes before the fall.** One
+   data point only (yesterday's 08:19 death was ~28 min after a boiler OFF),
+   but the boiler is a switched resistive load on the same site wiring —
+   worth watching for on the next freeze.
+3. **Does our probing keep the pack down?** Every observed period with
+   active transmission into the dead bus ended without a revival. A build
+   with the probe disabled would give the pack a perfectly silent bus for
+   hours and settle this.
+4. **Reviving via the console link** — if the RS232 protocol has a BMS
+   restart/reset command, it may be the only remote lever left.
+
+Yesterday the pack came back at 07:15 (after ~6.5 h dead, morning charge
+underway) and 09:52; whether time/SoC/charge state is the real revival
+variable is still unknown.
+
 ## Current state
 
 - **2026-09-01 morning: the control extended itself overnight.** The sniffer
@@ -156,10 +217,10 @@ by silence on the bus, or whether the receiver goes deaf mid-traffic.
   by the sniffer's silence probe (single-shot), and CAN init moved back after
   `initializeWiFi()` — the sniffer's long-jam boot position, the only boot
   shape that has ever revived a silent pack.
-- **Being watched** through 2026-09-01: if the reshaped loop matches the
-  sniffer's hold time, the freeze was one of the three suspects above; they
-  can then be reintroduced one at a time if the exact culprit matters.
-- **`main`:** `7488cfe`, nothing pushed.
+- **2026-09-01 13:30: link down since 07:52**, pack CAN-silent, ESP cycling
+  probe/recovery. Freeze log saved to
+  `logs/app-2026-09-01_reshaped-loop-freeze.log`.
+- **`main`:** `7488cfe` (+ docs), nothing pushed.
 - **Temporary settings to revert** once this is closed: `app.log` cap raised
   from 100 kB to 768 kB, and the health line at 1 minute instead of 20.
 
