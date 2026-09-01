@@ -183,10 +183,15 @@ The revival lore also broke today:
 
 Open leads, roughly in order:
 
-1. **Physical layer, back on top.** A healthy receiver watching the bus
-   degrade into an error storm is what a physical-layer fault looks like.
-   Termination at the battery end (DIP2, ~60 Ω across CAN-H/L) is still
-   unverified — measure on the next site visit.
+1. **Physical layer — CONFIRMED missing termination (2026-09-01 evening).**
+   Measured on site: battery-end RJ45 pin 4 ↔ 5 reads 32 kΩ with the pack
+   off = unpowered transceiver input impedance, no 120 Ω present; the DIP
+   switch changes nothing (it is the address selector, not termination).
+   ESP end has its 120 Ω. The bus ran single-end-terminated the whole time —
+   reflections corrupt the pack's own transmissions until its CAN controller
+   latches off, which matches the captured fall exactly. Fix in progress:
+   external 120 Ω across pins 4–5 at the battery end, then a pack power
+   cycle. Details in [`../rj45_cable_wiring.md`](../rj45_cable_wiring.md).
 2. **The boiler relay switched to 500 W two minutes before the fall.** One
    data point only (yesterday's 08:19 death was ~28 min after a boiler OFF),
    but the boiler is a switched resistive load on the same site wiring —

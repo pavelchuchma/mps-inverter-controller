@@ -124,15 +124,27 @@ stays empty. A straight-through plug would be actively harmful:
 
 The cable *is* the CAN bus, with exactly one node at each end — the correct
 topology, no stubs. The TJA1050 module must therefore sit directly at the ESP
-board's RJ45 jack, not on a branch. Its on-board 120 Ω terminates the ESP end;
-the battery end is terminated by the BMS when DIP2 is at 0. **This is
-unverified.** The cross-reference used to point at `battery_can_spec.md`, which
-carries no DIP documentation at all and asks for a measurement instead: RJ45
-pin 4 ↔ pin 5 with the battery switched off, where 120 Ω means the BMS
-terminates and an open circuit means a second resistor is needed. Neither the
-switch position nor the measurement has been checked on site, and after the
-crosstalk result below this is the leading remaining candidate for the CAN bus
-errors.
+board's RJ45 jack, not on a branch. Its on-board 120 Ω terminates the ESP end.
+
+**Measured on site 2026-09-01: the battery end is NOT terminated.** RJ45
+pin 4 ↔ pin 5 (the blue pair) on the switched-off battery reads **32 kΩ** —
+the differential input impedance of an unpowered CAN transceiver, exactly
+what an unterminated node looks like. A fitted 120 Ω would dominate the
+reading (120 ‖ 32 000 ≈ 119.6 Ω). Flipping the DIP switch changed nothing,
+which kills the "DIP2 enables termination" assumption — on the US series the
+DIP block is the pack address selector (and even where a BMS does switch
+termination, it does so electronically, invisible on an unpowered pack).
+The ESP side of the cable measured the expected 120 Ω.
+
+The bus has therefore been running 500 kbit/s over 15 m with termination at
+one end only. That is the leading explanation for both the permanent
+~1/min background bus errors and the error-storm collapses of
+[`todo/002`](todo/002-can-link-freezes-under-main-firmware.md): reflections
+from the open end corrupt the pack's own transmissions, its TEC climbs, and
+its CAN controller eventually latches off. **Fix: a 120 Ω resistor across
+pins 4–5 at the battery end of the cable.** Verification after fitting it:
+the pair measures ~60 Ω end to end, and the background bus_err rate drops
+to ~zero.
 
 The console link runs 115200 baud at ±12 V RS232 swing right next to the CAN
 pair. CAN is differential and CRC-protected, so this should be tolerable, but it
