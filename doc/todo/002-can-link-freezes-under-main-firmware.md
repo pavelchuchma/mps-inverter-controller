@@ -196,6 +196,18 @@ Open leads, roughly in order:
    data point only (yesterday's 08:19 death was ~28 min after a boiler OFF),
    but the boiler is a switched resistive load on the same site wiring —
    worth watching for on the next freeze.
+
+**2026-09-02 update — post-fix eliminations.** With the 120 Ω terminator
+fitted and verified: a full pack power cycle did not bring CAN back, the
+restored 0x305 probe stays unacknowledged (~29 failures/min, continuously),
+and a 30-minute runtime mute of both RS232 links (16:12–16:42, `serial_links`
+ported to the diag branch as `de3e412`) changed nothing — the ACK bit is a
+hardware reflex of the pack's transceiver and it never comes, quiet cable or
+not. Crosstalk is out as the reason the port stays down. What remains:
+the DIP/port check at the battery (address selector position after the
+measurement session, and the plug really seated in A/CAN), a TWAI self-test
+build (NO_ACK + self-reception) to prove our own TJA1050 TX path remotely,
+and after that a hardware-dead CAN interface in the pack.
 3. **Does our probing keep the pack down? ANSWERED: no.** Zero-transmit
    build (`1777007` on `diag/can-sniffer-instrumented`, deployed 18:30)
    gave the pack ~3.5 hours of absolute bus silence (minute lines confirm
