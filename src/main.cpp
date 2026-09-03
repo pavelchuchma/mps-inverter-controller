@@ -11,6 +11,7 @@
 #include "inverter_comm.h"
 #include "pylontech_comm.h"
 #include "pylontech_can.h"
+#include "battery_telnet.h"
 #include "phone.h"
 #include "phone_charger.h"
 #include "influx.h"
@@ -227,6 +228,10 @@ void setup() {
 
   // Initialize Pylontech battery console communication (background task)
   pylontech_comm_init(BATTERY_RX_PIN, BATTERY_TX_PIN);
+
+  // Expose the battery console on telnet :23 for interactive debugging. Must
+  // follow pylontech_comm_init(), which owns Serial2.
+  battery_telnet_init();
 
   // Start polling phone status endpoint (background task, 30s interval)
   phone_comm_init();

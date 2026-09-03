@@ -87,3 +87,11 @@ bool pylontech_data_valid();
 // the link returns by itself even if the operator loses connectivity.
 void pylontech_comm_set_paused(bool paused, uint32_t max_ms);
 bool pylontech_comm_paused();
+
+// True once the polling task has actually stopped touching Serial2. Setting
+// the pause flag only takes effect at the top of the next cycle, so a consensus
+// read already in flight keeps using the UART for up to
+// PYLONTECH_MAX_ATTEMPTS * PYLONTECH_READ_WINDOW_MS afterwards. The telnet
+// console bridge (battery_telnet.cpp) waits on this before it takes the port
+// over, otherwise the operator's first seconds are interleaved with 'pwr'.
+bool pylontech_comm_uart_idle();

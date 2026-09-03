@@ -262,6 +262,8 @@ static void print_status_snapshot() {
 // See pylontech_comm_set_paused() in the header for why this exists.
 static volatile bool g_pylon_paused = false;
 static volatile uint32_t g_pylon_resume_at_ms = 0;
+// See pylontech_comm_uart_idle() in the header.
+static volatile bool g_pylon_uart_idle = false;
 
 void pylontech_comm_set_paused(bool paused, uint32_t max_ms) {
   g_pylon_resume_at_ms = paused ? (millis() + max_ms) : 0;
@@ -275,11 +277,14 @@ void pylontech_comm_set_paused(bool paused, uint32_t max_ms) {
 
 bool pylontech_comm_paused() { return g_pylon_paused; }
 
+bool pylontech_comm_uart_idle() { return g_pylon_uart_idle; }
+
 static void pylontech_task(void* arg) {
   (void)arg;
   uint8_t consec_fails = 0;
   for (;;) {
     if (g_pylon_paused) {
+      g_pylon_uart_idle = true;
       if ((int32_t)(millis() - g_pylon_resume_at_ms) >= 0) {
         g_pylon_paused = false;
         printInfo("[BAT] serial link auto-resumed");
@@ -293,6 +298,7 @@ static void pylontech_task(void* arg) {
       vTaskDelay(pdMS_TO_TICKS(500));
       continue;
     }
+    g_pylon_uart_idle = false;
     // Read 'pwr' back-to-back (no inter-attempt delay) and accept a value only
     // once PYLONTECH_CONSENSUS_COUNT consecutive frames agree. A failed read or
     // a value that differs from the previous one resets the streak. Give up
@@ -338,7 +344,15 @@ static void pylontech_task(void* arg) {
 
     print_status_snapshot();
 
-    vTaskDelay(pdMS_TO_TICKS(PYLONTECH_POLL_INTERVAL_MS));
+    // Sleep until the next cycle, but return to the top of the loop as soon as
+    // a pause arrives mid-interval. Sleeping the whole interval blind would add
+    // it to the handover wait, and that wait is an operator watching
+    // "Connecting..." in a telnet session.
+    for (uint32_t slept = 0;
+         slept < PYLONTECH_POLL_INTERVAL_MS && !g_pylon_paused;
+         slept += 100) {
+      vTaskDelay(pdMS_TO_TICKS(100));
+    }
   }
 }
 
