@@ -2,13 +2,25 @@
 id: 002
 title: CAN link freezes under the main firmware but not under the bring-up sniffer
 type: bug
-status: open
+status: in-progress
 priority: high
 component: battery-can
 created: 2026-08-31
 ---
 
 # CAN link freezes under the main firmware but not under the bring-up sniffer
+
+> **Root cause found 2026-09-13 — see [`004`](004-move-can-rx-off-gpio0.md).**
+> `TWAI_RX = GPIO0`, which is also driven by the serial auto-reset circuit. The
+> debug pizero's CP2102, plugged in with its port closed, pulls GPIO0 through
+> the reset transistor and corrupts CAN reception; opening the port (any
+> monitor, or just asserting DTR/RTS) releases GPIO0 and CAN runs clean. Every
+> symptom in this file — the "freezes", the way "a monitor connect always
+> revives it", the restarts that did and didn't work — is that one effect. The
+> firmware changes made along the way (zero-transmit, sniffer-shaped loop,
+> termination) were genuine improvements but secondary; the real fix is moving
+> CAN RX off GPIO0, tracked in `004`. The history below is kept as the record
+> of how it was cornered.
 
 ## Summary
 
