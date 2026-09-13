@@ -2,7 +2,7 @@
 id: 004
 title: Move CAN RX off GPIO0 (shared with the serial auto-reset circuit)
 type: task
-status: open
+status: in-progress
 priority: high
 component: battery-can
 created: 2026-09-13
@@ -94,19 +94,63 @@ rework:
 After the rework and config change, with the pizero **plugged in and no
 monitor open** (the exact state that used to kill CAN):
 
-- `/can` shows `valid=true`, `rx` climbing at ~180/min, `REC 0`, `err 0`.
-- Link survives the evening end-of-charge and overnight (the failures that
+- [x] `/can` shows `valid=true`, `rx` climbing at ~180/min, `REC 0`, `err 0`.
+- [ ] Link survives the evening end-of-charge and overnight (the failures that
   filled `002`).
-- `pio remote run -t upload` still flashes (GPIO0 auto-reset intact).
-- BTN_UP touch still registers (or is intentionally dropped).
+- [x] `pio remote run -t upload` still flashes (GPIO0 auto-reset intact).
+- [x] BTN_UP touch still registers (or is intentionally dropped).
+
+### Progress 2026-09-13
+
+Rework done: the divider lead moved from GPIO0 to GPIO4, the BTN_UP pad from
+GPIO4 to GPIO2 (no pull-down fitted; a floating pad satisfies the download-mode
+strapping requirement). Firmware with the new `config.h` flashed over
+`pio remote run -t upload` while the board sat on the bench — the upload and
+the RTS hard reset both worked, so the GPIO0 auto-reset path is intact and the
+board boots normally with GPIO2 floating.
+
+BTN_UP on GPIO2 works, checked on the bench: baseline 62–73 at arm time, and a
+press at 19:19:01 logged `raw=29 base=62` — the same margin as BTN_DOWN. No
+pull-down fitted, and the board booted cleanly four times with GPIO2 floating.
+Note that the detection threshold is no longer the fixed 30 this todo was
+written against: `b4144f0` and `2059f5a` (same day, unrelated to the pin move)
+replaced it with a rolling 15 s idle baseline and a press defined as a drop to
+55 % of it. The GPIO2 pad behaves like GPIO4 did under either rule.
+
+Reinstalled at the inverter the same day (boot 19:20:40, after a few
+power-cycles while plugging in). First ~30 min from the per-minute health
+lines in `app.log`, pizero plugged in, no monitor open:
+
+- `rx` a flat 179–185/min every single minute, `missed 0`, `recov 0`,
+  `REC 0` / `TEC 0` on every line. The link never wobbled.
+- `bus_err` reached 72 in total, but not from the plug-in: the log shows two
+  bursts, `+4 +26 +8` at 19:29–19:31 and `+6 +17 +7` at 19:40–19:42, with
+  `+0` or `+1` elsewhere. The first burst starts the same minute the
+  `[CHARGER] OFF` relay switched (19:29:44); nothing is logged near the second.
+  The frame rate did not dip during either, so they are isolated bit/stuff
+  errors the controller shrugs off, not the GPIO0 failure pattern (which
+  was `rx 0`, `REC 85`). Worth keeping an eye on, not worth acting on yet.
+
+Decoded data plausible (SOC 97 %, 49.8 V, 17.8 °C, 1 module, CCL 20 A,
+DCL 100 A). Remaining: a 24 h soak on the full 15 m cable.
 
 ## Why not now
 
-The rework is soldering at the cottage; the deployment is remote and visited
-rarely. Until then CAN runs whenever a serial monitor is open on the pizero
-(DTR/RTS asserted). The temporary port-holder workaround was **removed** on
-2026-09-13 so the monitor and `pio remote` upload stay free of extra magic —
-the trade-off is that CAN is down while the pizero is idle with no monitor.
+*Superseded 2026-09-13 — the rework was done the same day this was written; the
+paragraph is kept as the record of the state it was written in.*
+
+> The rework is soldering at the cottage; the deployment is remote and visited
+> rarely. Until then CAN runs whenever a serial monitor is open on the pizero
+> (DTR/RTS asserted). The temporary port-holder workaround was **removed** on
+> 2026-09-13 so the monitor and `pio remote` upload stay free of extra magic —
+> the trade-off is that CAN is down while the pizero is idle with no monitor.
+
+What is left is the 24 h soak on the full 15 m cable. Closing this also closes
+[`002`](002-can-link-freezes-under-main-firmware.md) and releases
+[`003`](003-remove-debug-cmds-serial-links-can-bus-reset.md), plus reverting
+`002`'s temporary settings: the `[CAN]` health line back to 20 min
+(`CAN_LOG_INTERVAL_MS`) and the `app.log` cap back to 100 kB
+(`utils.cpp:45`).
 
 ## Related
 
