@@ -95,7 +95,7 @@ TJA1050 key figures (NXP datasheet, static characteristics):
 module VCC  → 5 V (VIN)
 module GND  → GND
 module TXD  ← GPIO12,  plus 2.2 kΩ from GPIO12 to GND
-module RXD  → 4.7 kΩ → GPIO0,  plus 10 kΩ from GPIO0 to GND
+module RXD  → 4.7 kΩ → GPIO4,  plus 10 kΩ from GPIO4 to GND
 module CANH → battery A/CAN RJ45 pin 4
 module CANL → battery A/CAN RJ45 pin 5
 ```
@@ -107,15 +107,19 @@ two RS232 links — see [`rj45_cable_wiring.md`](rj45_cable_wiring.md).
 
 ### Pin assignment rationale
 
-Only GPIO0, GPIO2 and GPIO12 are free, and all three are strapping pins. Both
-CAN signals sit **high** at boot (the bus idles recessive and TJA1050's `TXD`
-has an internal pull-up), so the choice is constrained:
+With every non-strapping GPIO already taken, the original design put both CAN
+signals on strapping pins (GPIO12 and GPIO0). GPIO0 turned out to be a mistake
+and CAN RX now lives on GPIO4, freed by moving the `BTN_UP` touch pad to GPIO2
+(see [`todo/004`](todo/004-move-can-rx-off-gpio0.md)). Both CAN signals sit
+**high** at boot (the bus idles recessive and TJA1050's `TXD` has an internal
+pull-up), so the choice is constrained:
 
 | Pin | High at boot means | Verdict |
 |---|---|---|
 | GPIO12 | flash voltage selected as 1.8 V → **board does not boot** | usable only with an external pull-down |
-| GPIO2 | normal boot fine; UART download mode blocked, and nothing on the board pulls it low → **flashing breaks permanently** | avoid |
-| GPIO0 | normal boot fine; download mode needs it low, but the auto-reset circuit actively drives it | usable |
+| GPIO4 | not a strapping pin, no auto-reset role | **CAN RX** (was the `BTN_UP` touch pad) |
+| GPIO0 | normal boot fine, but the USB-serial auto-reset transistor loads it whenever the CP2102 is powered with its port closed → **CAN RX corrupted** | auto-reset only, nothing else |
+| GPIO2 | download mode needs it low or floating; a touch pad is fine, a CAN signal held high would break flashing | `BTN_UP` touch pad |
 
 Hence:
 
@@ -123,13 +127,24 @@ Hence:
   (≈ 17–50 kΩ to 5 V) overrides the ESP32's internal pull-down (≈ 45 kΩ). With
   2.2 kΩ the pin settles at ≈ 0.2–0.6 V, below `VIL` = 0.25·VDD = 0.825 V. While
   the driver is running, the ESP32 sources ≈ 1.5 mA into it, which is fine.
-- **`TWAI_RX = GPIO0` + 4.7 kΩ/10 kΩ divider.** Gives ≈ 3.4 V from the 5 V
+- **`TWAI_RX = GPIO4` + 4.7 kΩ/10 kΩ divider.** Gives ≈ 3.4 V from the 5 V
   `RXD` swing. Thévenin ≈ 3.2 kΩ against ≈ 25 pF is an ≈ 80 ns edge — negligible
-  against a 2 µs bit time at 500 kbit/s. `esptool` only has to sink ≈ 1 mA to
-  hold GPIO0 low for download mode, which the auto-reset transistor manages.
-  This matters because firmware is uploaded remotely
-  (`pio remote run -t upload`) with no access to the BOOT button.
-- **GPIO2 stays unused.**
+  against a 2 µs bit time at 500 kbit/s. GPIO4 has no strapping or auto-reset
+  role, so nothing else ever drives it.
+- **GPIO0 carries CAN RX no more.** The first build had the divider on GPIO0,
+  reasoning that `esptool` only needs to sink ≈ 1 mA through the auto-reset
+  transistor for download mode. That part was true — remote flashing worked —
+  but the reverse case was missed: with the CP2102 powered and its port
+  *closed* (DTR/RTS idle) the auto-reset transistor loads GPIO0 and corrupts
+  reception (`REC` climbs, `rx = 0`). Opening any serial monitor released the
+  pin and "revived" the link, which is the whole story behind
+  [`todo/002`](todo/002-can-link-freezes-under-main-firmware.md). GPIO0 is now
+  left to the auto-reset/download circuit alone, so remote uploads
+  (`pio remote run -t upload`, no access to the BOOT button) keep working.
+- **GPIO2 holds the `BTN_UP` touch pad.** The pad is a floating conductor, so
+  it satisfies the "low or floating" download-mode requirement; a pull-down is
+  optional. If touch on GPIO2 proves unreliable, dropping `BTN_UP` is
+  acceptable — the web UI covers it.
 
 Alternative, if the strapping-pin workarounds prove unreliable: drop the console
 link and reuse `BATTERY_TX_PIN` (GPIO32) and `BATTERY_RX_PIN` (GPIO39, input
@@ -537,7 +552,7 @@ BMS protects itself with its own FETs — so this is deliberately deferred.
 - [ ] Module: pin S at GND (not VCC), 120 Ω present, VCC to 5 V
 - [ ] Battery RJ45: confirm pin 4 = CAN-H, pin 5 = CAN-L
 - [ ] Battery termination: measure RJ45 pin 4 ↔ pin 5 with the battery off
-- [ ] Resistors fitted: 2.2 kΩ pull-down on GPIO12, 4.7 kΩ/10 kΩ divider on GPIO0
+- [x] Resistors fitted: 2.2 kΩ pull-down on GPIO12, 4.7 kΩ/10 kΩ divider on GPIO4 (moved from GPIO0 on 2026-09-13, see todo/004)
 - [ ] Board still boots and still accepts a remote serial upload with the module powered
 - [x] `0x305` **not** sent — sending it silences this pack
 - [x] Sniffer logs frames

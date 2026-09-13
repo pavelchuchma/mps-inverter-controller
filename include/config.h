@@ -19,9 +19,9 @@
 //        LCD_BACKLIGHT_PIN  GPIO26 | 10 || 29 | GPIO5   LCD_D6 (boot)
 //          RELAY_BOILER_A   GPIO27 | 11 || 30 | GPIO17  INVERTER_RX_PIN
 //          RELAY_BOILER_B   GPIO14 | 12 || 31 | GPIO16  INVERTER_TX_PIN
-// BATTERY_CAN_TX_PIN (boot) GPIO12 | 13 || 32 | GPIO4   BTN_UP_TOUCH
-//                              GND | 14 || 33 | GPIO0   BATTERY_CAN_RX_PIN (boot)
-//          RELAY_BOILER_C   GPIO13 | 15 || 34 | GPIO2   (boot)
+// BATTERY_CAN_TX_PIN (boot) GPIO12 | 13 || 32 | GPIO4   BATTERY_CAN_RX_PIN
+//                              GND | 14 || 33 | GPIO0   (boot, auto-reset only)
+//          RELAY_BOILER_C   GPIO13 | 15 || 34 | GPIO2   BTN_UP_TOUCH (boot)
 //                    (SPI)  GPIO9  | 16 || 35 | GPIO15  BTN_DOWN_TOUCH (boot)
 //                    (SPI)  GPIO10 | 17 || 36 | GPIO8   (SPI)
 //                    (SPI)  GPIO11 | 18 || 37 | GPIO7   (SPI)
@@ -49,11 +49,14 @@
 #define BATTERY_TX_PIN 32
 
 // --- Battery CAN (via TJA1050) ---
-// Both are strapping pins; see doc/battery_can_spec.md "Pin assignment
-// rationale". GPIO12 needs an external 2.2k pull-down or the board will not
-// boot, GPIO0 sits behind a 4.7k/10k divider from the transceiver's 5 V RXD.
+// See doc/battery_can_spec.md "Pin assignment rationale" and doc/todo/004.
+// GPIO12 (strapping) needs an external 2.2k pull-down or the board will not
+// boot. RX sits behind a 4.7k/10k divider from the transceiver's 5 V RXD on
+// GPIO4 — NOT GPIO0: the USB-serial auto-reset transistor loads GPIO0 whenever
+// the CP2102 is powered with its port closed and corrupts CAN reception
+// (root cause of todo 002). GPIO0 is left to the auto-reset circuit only.
 #define BATTERY_CAN_TX_PIN 12
-#define BATTERY_CAN_RX_PIN 0
+#define BATTERY_CAN_RX_PIN 4
 
 // --- LCD QC1602A (4-bit parallel mode) ---
 #define LCD_RS 21
@@ -90,7 +93,11 @@
 // --- Capacitive touch inputs (ESP32 Touch) ---
 // Physical button positions: Up, Down
 
-#define BTN_UP_TOUCH    4   // Touch0 (GPIO4)
+// GPIO2 is a strapping pin (must read low at boot for normal boot and UART
+// download). A bare touch pad may float, so fit an external pull-down
+// (e.g. 10k to GND) on GPIO2; touchRead() needs no pinMode() of its own.
+// If GPIO2 proves unreliable, dropping BTN_UP is acceptable (web UI covers it).
+#define BTN_UP_TOUCH 2  // Touch2 (GPIO2)
 #define BTN_DOWN_TOUCH 15  // Touch3 (GPIO15)
 
 // Touch threshold for detecting a press. Raw values vary by board/environment.
