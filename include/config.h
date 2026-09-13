@@ -100,10 +100,19 @@
 #define BTN_UP_TOUCH 2  // Touch2 (GPIO2)
 #define BTN_DOWN_TOUCH 15  // Touch3 (GPIO15)
 
-// Touch threshold for detecting a press. Raw values vary by board/environment.
-// Measured with the current wiring: idle 44-54, pressed 0-20 on both buttons,
-// so 30 sits in the gap with ~14 counts of margin on either side.
-#define BTN_TOUCH_THRESHOLD 30
+// Press detection is adaptive. On the classic ESP32 touchRead() returns a
+// *lower* count when the pad is touched (measured: idle 44-54, pressed 0-20),
+// so the idle baseline is the maximum of a smoothed reading over the last
+// BTN_TOUCH_BASELINE_WINDOW_S seconds and a press is a sudden drop of at least
+// BTN_TOUCH_PRESS_DELTA counts below it. A held finger can never raise the
+// baseline, and slow drift (humidity, temperature, pad wear) is followed
+// automatically. The buttons are inactive until the window has filled once
+// after boot. A fixed threshold (30) previously drifted into "never reacts" or
+// "fires constantly" depending on conditions at the cottage.
+#define BTN_TOUCH_BASELINE_WINDOW_S 15
+#define BTN_TOUCH_PRESS_DELTA 20    // raw <= baseline - 20 -> pressed
+#define BTN_TOUCH_RELEASE_DELTA 12  // raw >= baseline - 12 -> released (hysteresis)
+#define BTN_TOUCH_CONFIRM_SAMPLES 2 // consecutive 50 ms samples needed for a press
 
 // --- NTC Thermistor (temperature sensor) ---
 // Wiring per: https://www.smartlab.at/a-diy-guide-measuring-water-temperature-with-an-ntc-10k-thermistor-and-esp32/

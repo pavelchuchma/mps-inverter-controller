@@ -253,9 +253,49 @@ struct Task {
 struct BtnState {
   bool pressed;
   uint32_t pressStartMs;
+  uint8_t belowCount;  // consecutive samples below the press threshold
+  // Adaptive idle baseline: per-second maxima of a smoothed reading over the
+  // last BTN_TOUCH_BASELINE_WINDOW_S seconds. The smoothing (EMA, alpha 1/4)
+  // keeps a single upward noise spike from inflating the baseline for the
+  // whole window; press detection itself uses the raw sample so it stays fast.
+  uint16_t smoothed;
+  uint16_t buckets[BTN_TOUCH_BASELINE_WINDOW_S];
+  uint8_t bucketsFilled;
+  uint32_t lastBucketSec;
 };
 
-static BtnState btnStates[2] = {{false, 0}, {false, 0}};
+static BtnState btnStates[2] = {};
+
+// Idle baseline = max over the filled buckets (0 until the first sample).
+static uint16_t btn_baseline(const BtnState& b) {
+  uint16_t base = 0;
+  for (uint8_t i = 0; i < b.bucketsFilled; i++) {
+    if (b.buckets[i] > base) base = b.buckets[i];
+  }
+  return base;
+}
+
+// Feed one sample into the rolling baseline window. Returns true once the
+// window has been filled at least once since boot (buttons armed).
+static bool btn_update_baseline(BtnState& b, uint16_t raw, uint32_t nowMs) {
+  if (b.bucketsFilled == 0 && b.lastBucketSec == 0) {
+    b.smoothed = raw;  // seed the filter on the very first sample
+  } else {
+    b.smoothed = (uint16_t)((b.smoothed * 3 + raw + 2) / 4);
+  }
+
+  const uint32_t sec = nowMs / 1000;
+  const uint8_t idx = (uint8_t)(sec % BTN_TOUCH_BASELINE_WINDOW_S);
+  if (sec != b.lastBucketSec || b.bucketsFilled == 0) {
+    // New second: start a fresh bucket (overwrites the one from N seconds ago).
+    b.lastBucketSec = sec;
+    b.buckets[idx] = b.smoothed;
+    if (b.bucketsFilled < BTN_TOUCH_BASELINE_WINDOW_S) b.bucketsFilled++;
+  } else if (b.smoothed > b.buckets[idx]) {
+    b.buckets[idx] = b.smoothed;
+  }
+  return b.bucketsFilled >= BTN_TOUCH_BASELINE_WINDOW_S;
+}
 
 // --- Button handlers (called on button events) ---
 void onBtnUpPress() { display_scroll_up(); }
@@ -280,27 +320,51 @@ static const BtnReleaseFn btnReleaseHandlers[2] = {
 
 static void task_scan_touch() {
   const uint8_t touches[2] = {BTN_UP_TOUCH, BTN_DOWN_TOUCH};
+  static const char* const names[2] = {"up", "down"};
+  static bool armedLogged = false;
   const uint32_t nowMs = millis();
   bool btnStateChanged = false;
+  bool allArmed = true;
 
   for (int i = 0; i < 2; i++) {
-    uint16_t raw = touchRead(touches[i]);
-    bool nowPressed = (raw <= BTN_TOUCH_THRESHOLD);
-
-    // Detect falling edge (press)
-    if (nowPressed && !btnStates[i].pressed) {
-      btnStates[i].pressed = true;
-      btnStates[i].pressStartMs = nowMs;
-      btnPressHandlers[i]();
-      btnStateChanged = true;
+    BtnState& b = btnStates[i];
+    const uint16_t raw = touchRead(touches[i]);
+    const bool armed = btn_update_baseline(b, raw, nowMs);
+    if (!armed) {
+      allArmed = false;
+      continue;  // still calibrating after boot: buttons inactive
     }
-    // Detect rising edge (release)
-    else if (!nowPressed && btnStates[i].pressed) {
-      btnStates[i].pressed = false;
-      int durationMs = (int)(nowMs - btnStates[i].pressStartMs);
+
+    const uint16_t base = btn_baseline(b);
+    // A touch lowers the count, so a press is a drop below the idle baseline.
+    // Hysteresis: press needs a bigger drop than release, and the press must
+    // hold for BTN_TOUCH_CONFIRM_SAMPLES consecutive scans.
+    const bool belowPress = (base > BTN_TOUCH_PRESS_DELTA) && (raw <= base - BTN_TOUCH_PRESS_DELTA);
+    const bool aboveRelease = (base <= BTN_TOUCH_RELEASE_DELTA) || (raw >= base - BTN_TOUCH_RELEASE_DELTA);
+
+    if (!b.pressed) {
+      b.belowCount = belowPress ? (uint8_t)(b.belowCount + 1) : 0;
+      if (b.belowCount >= BTN_TOUCH_CONFIRM_SAMPLES) {
+        b.pressed = true;
+        b.pressStartMs = nowMs;
+        b.belowCount = 0;
+        printInfo("BTN %s press (raw=%u base=%u)", names[i], raw, base);
+        btnPressHandlers[i]();
+        btnStateChanged = true;
+      }
+    } else if (aboveRelease) {
+      b.pressed = false;
+      int durationMs = (int)(nowMs - b.pressStartMs);
+      printInfo("BTN %s release after %d ms (raw=%u base=%u)", names[i], durationMs, raw, base);
       btnReleaseHandlers[i](durationMs);
       btnStateChanged = true;
     }
+  }
+
+  if (allArmed && !armedLogged) {
+    armedLogged = true;
+    printInfo("Touch buttons armed: baseline up=%u down=%u",
+              btn_baseline(btnStates[0]), btn_baseline(btnStates[1]));
   }
 
   // Activate backlight on any button event
