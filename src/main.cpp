@@ -339,8 +339,8 @@ static void task_scan_touch() {
     // A touch lowers the count, so a press is a drop below the idle baseline.
     // Hysteresis: press needs a bigger drop than release, and the press must
     // hold for BTN_TOUCH_CONFIRM_SAMPLES consecutive scans.
-    const bool belowPress = (base > BTN_TOUCH_PRESS_DELTA) && (raw <= base - BTN_TOUCH_PRESS_DELTA);
-    const bool aboveRelease = (base <= BTN_TOUCH_RELEASE_DELTA) || (raw >= base - BTN_TOUCH_RELEASE_DELTA);
+    const bool belowPress = (base > 0) && ((uint32_t)raw * 100 <= (uint32_t)base * BTN_TOUCH_PRESS_PCT);
+    const bool aboveRelease = (base == 0) || ((uint32_t)raw * 100 >= (uint32_t)base * BTN_TOUCH_RELEASE_PCT);
 
     if (!b.pressed) {
       b.belowCount = belowPress ? (uint8_t)(b.belowCount + 1) : 0;

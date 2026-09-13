@@ -101,17 +101,21 @@
 #define BTN_DOWN_TOUCH 15  // Touch3 (GPIO15)
 
 // Press detection is adaptive. On the classic ESP32 touchRead() returns a
-// *lower* count when the pad is touched (measured: idle 44-54, pressed 0-20),
-// so the idle baseline is the maximum of a smoothed reading over the last
-// BTN_TOUCH_BASELINE_WINDOW_S seconds and a press is a sudden drop of at least
-// BTN_TOUCH_PRESS_DELTA counts below it. A held finger can never raise the
-// baseline, and slow drift (humidity, temperature, pad wear) is followed
+// *lower* count when the pad is touched (measured 2026-09-13: idle 45-64,
+// pressed 0-25, baseline settles at 57-63), so the idle baseline is the
+// maximum of a smoothed reading over the last BTN_TOUCH_BASELINE_WINDOW_S
+// seconds and a press is a sudden drop below a fraction of it. Thresholds are
+// relative to the baseline because it is inflated right after boot (67 vs a
+// settled ~60) and a fixed delta of 20 counts fired once on idle noise at
+// arming. With a baseline of 60: pressed <= 33, released >= 45, ~8 counts of
+// margin from both idle and pressed readings. A held finger can never raise
+// the baseline, and slow drift (humidity, temperature, pad wear) is followed
 // automatically. The buttons are inactive until the window has filled once
 // after boot. A fixed threshold (30) previously drifted into "never reacts" or
 // "fires constantly" depending on conditions at the cottage.
 #define BTN_TOUCH_BASELINE_WINDOW_S 15
-#define BTN_TOUCH_PRESS_DELTA 20    // raw <= baseline - 20 -> pressed
-#define BTN_TOUCH_RELEASE_DELTA 12  // raw >= baseline - 12 -> released (hysteresis)
+#define BTN_TOUCH_PRESS_PCT 55      // raw <= 55% of baseline -> pressed
+#define BTN_TOUCH_RELEASE_PCT 75    // raw >= 75% of baseline -> released (hysteresis)
 #define BTN_TOUCH_CONFIRM_SAMPLES 2 // consecutive 50 ms samples needed for a press
 
 // --- NTC Thermistor (temperature sensor) ---
