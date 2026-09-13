@@ -3,15 +3,20 @@
 # remote-monitor.sh — workaround for the intermittent wrong-baud problem on the
 # remote serial bridge (CP2102 on "pizero", reached via `pio remote`).
 #
-# Occasionally the remote monitor comes up at the wrong effective baud rate and
-# prints garbage. Manually toggling the client baud rate (wrong -> correct)
-# fixes it. This script automates that toggle:
+# By default the script simply opens the remote monitor at the correct baud
+# rate. Occasionally the monitor comes up at the wrong effective baud rate and
+# prints garbage; manually toggling the client baud rate (wrong -> correct)
+# fixes it. Pass `-r` to automate that toggle (a "refresh") before connecting:
 #
 #   1. Open the remote monitor at a deliberately WRONG baud rate.
 #   2. As soon as a few bytes arrive (proof the port opened and the CP210x
 #      divisor was reprogrammed), stop that monitor.
 #   3. Reopen the monitor at the correct (default) baud rate, foreground,
 #      so you get a normal interactive session.
+#
+# Usage:
+#   scripts/remote-monitor.sh        connect directly at GOOD_BAUD
+#   scripts/remote-monitor.sh -r     prime at WRONG_BAUD first, then connect
 #
 # Tunables via environment variables:
 #   WRONG_BAUD     baud used for the priming pass         (default 9600)
@@ -25,8 +30,26 @@ GOOD_BAUD="${GOOD_BAUD:-115200}"
 PRIME_BYTES="${PRIME_BYTES:-8}"
 PRIME_TIMEOUT="${PRIME_TIMEOUT:-10}"
 
+refresh=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -r|--refresh) refresh=1 ;;
+    -h|--help)
+      sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    *) echo "Unknown option: $1 (try -h)" >&2; exit 2 ;;
+  esac
+  shift
+done
+
 # Run from the project root so `pio` picks up platformio.ini defaults.
 cd "$(dirname "$0")/.."
+
+if [ "$refresh" -eq 0 ]; then
+  echo ">>> Connecting at baud ${GOOD_BAUD} (use -r to prime the bridge first)..."
+  exec pio remote device monitor --baud "${GOOD_BAUD}" --filter time
+fi
 
 tmp="$(mktemp)"
 mon_pid=""
