@@ -173,6 +173,107 @@ static bool send_command_and_get_payload(const String& cmd, String& out_payload)
   return true;
 }
 
+// Last successfully read configuration. Guarded by g_inv_mutex like the status
+// snapshot; ts_ms stays 0 until the first good QPIRI.
+static InverterConfig g_inverter_config = {};
+
+// Parse QPIRI and keep the five tokens worth storing. Token indices are the
+// model-dependent layout documented in data/settings.js; the payload this
+// inverter returns is in doc/todo/005-store-inverter-charge-config.md.
+//
+// Returns false on a payload that is short, non-numeric or physically
+// implausible, leaving the previous values untouched - the same rule the
+// console link uses (pylontech_comm.cpp parse_pwr_payload), and for the same
+// reason: a corrupted token that slips through would be stored as a
+// configuration change that never happened.
+static bool parse_qpiri_payload(const String& p) {
+  const int MAX_TOK = 32;
+  String toks[MAX_TOK];
+  int tcount = 0;
+  int start = 0;
+  for (int i = 0; i <= (int)p.length() && tcount < MAX_TOK; ++i) {
+    if (i == (int)p.length() || p.charAt(i) == ' ') {
+      if (i - start > 0) toks[tcount++] = p.substring(start, i);
+      start = i + 1;
+    }
+  }
+
+  // Index 22 is the highest one read, so anything shorter is a truncated frame
+  // or a different model - in which case index 14 and 22 would quietly point at
+  // some other field rather than fail.
+  const int EXPECTED_TOKENS = 25;
+  if (tcount < EXPECTED_TOKENS) return false;
+
+  // A clean number: digits with at most one dot, optionally signed. toFloat()
+  // turns anything else silently into 0.0, which would look like a real setting.
+  auto num_ok = [](const String& v) -> bool {
+    if (v.length() == 0) return false;
+    int i = (v[0] == '-' || v[0] == '+') ? 1 : 0;
+    if (i >= (int)v.length()) return false;
+    int dots = 0;
+    for (; i < (int)v.length(); ++i) {
+      if (v[i] == '.') {
+        if (++dots > 1) return false;
+      } else if (!isdigit((unsigned char)v[i])) {
+        return false;
+      }
+    }
+    return true;
+  };
+  auto in_range = [](float v, float lo, float hi) { return v >= lo && v <= hi; };
+
+  const int IDX[5] = {14, 10, 11, 9, 22};
+  for (int i = 0; i < 5; ++i) {
+    if (!num_ok(toks[IDX[i]])) return false;
+  }
+
+  InverterConfig c = {};
+  c.max_charge_a = toks[14].toFloat();
+  c.bulk_v = toks[10].toFloat();
+  c.float_v = toks[11].toFloat();
+  c.lvd_v = toks[9].toFloat();
+  c.redischarge_v = toks[22].toFloat();
+
+  if (!in_range(c.max_charge_a, 0.0f, 100.0f)) return false;
+  if (!in_range(c.bulk_v, 40.0f, 60.0f)) return false;
+  if (!in_range(c.float_v, 40.0f, 60.0f)) return false;
+  if (!in_range(c.lvd_v, 35.0f, 50.0f)) return false;
+  if (!in_range(c.redischarge_v, 44.0f, 60.0f)) return false;
+
+  c.ts_ms = millis();
+  // millis() is 0 only in the first millisecond after boot, long before any
+  // serial exchange completes, but ts_ms == 0 is the "never read" sentinel so
+  // it must never be produced by a successful read.
+  if (c.ts_ms == 0) c.ts_ms = 1;
+
+  bool changed;
+  if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
+  changed = g_inverter_config.ts_ms != 0
+            && (c.max_charge_a != g_inverter_config.max_charge_a
+                || c.bulk_v != g_inverter_config.bulk_v
+                || c.float_v != g_inverter_config.float_v
+                || c.lvd_v != g_inverter_config.lvd_v
+                || c.redischarge_v != g_inverter_config.redischarge_v);
+  InverterConfig prev = g_inverter_config;
+  g_inverter_config = c;
+  if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
+
+  if (changed) {
+    // Somebody changed a setting, on the front panel or through /inv_set.
+    // Rare and worth a persistent line, unlike the read itself.
+    printWarning("[INV] config changed: chg %.0f->%.0f A  bulk %.1f->%.1f V  "
+                 "float %.1f->%.1f V  LVD %.1f->%.1f V  SBU %.1f->%.1f V",
+                 prev.max_charge_a, c.max_charge_a, prev.bulk_v, c.bulk_v,
+                 prev.float_v, c.float_v, prev.lvd_v, c.lvd_v,
+                 prev.redischarge_v, c.redischarge_v);
+  } else if (prev.ts_ms == 0) {
+    printInfo("[INV] config: chg %.0f A  bulk %.1f V  float %.1f V  LVD %.1f V  "
+              "SBU %.1f V", c.max_charge_a, c.bulk_v, c.float_v, c.lvd_v,
+              c.redischarge_v);
+  }
+  return true;
+}
+
 // Parse QMOD payload (first char is code)
 static void parse_qmod_payload(const String& p) {
   char code = p.length() ? p.charAt(0) : '\0';
@@ -296,6 +397,10 @@ bool inverter_comm_paused() { return g_inv_paused; }
 static void inverter_task(void* arg) {
   (void)arg;
   uint8_t consec_fails = 0;
+  // Due immediately on the first pass, then every INVERTER_CONFIG_INTERVAL_MS.
+  // Reading it at boot means /settings.html and the stored series have a value
+  // from the start rather than after the first interval.
+  unsigned long last_config_ms = 0;
   for (;;) {
     if (g_inv_paused) {
       if ((int32_t)(millis() - g_inv_resume_at_ms) >= 0) {
@@ -327,6 +432,22 @@ static void inverter_task(void* arg) {
       if (!parse_qpigs_payload(payload)) ok = false;
     } else {
       ok = false;
+    }
+
+    // QPIRI, every 5 minutes. In this task rather than a task of its own:
+    // send_command_and_get_payload() serializes on g_inv_serial_mutex anyway, so
+    // a second caller would only add contention on the one shared UART. A failed
+    // read is not counted towards consec_fails - the configuration is not what
+    // g_inverter_data_valid speaks for, and it retries on the next interval.
+    if (last_config_ms == 0
+        || millis() - last_config_ms >= INVERTER_CONFIG_INTERVAL_MS) {
+      last_config_ms = millis();
+      payload = String();
+      if (send_command_and_get_payload("QPIRI", payload)) {
+        if (!parse_qpiri_payload(payload)) {
+          printWarning("[INV] QPIRI rejected: \"%s\"", payload.c_str());
+        }
+      }
     }
 
     if (ok) {
@@ -394,6 +515,14 @@ float inverter_batt_discharge_current() {
   v = g_inverter_status.batt_discharge_current;
   if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
   return v;
+}
+
+bool inverter_get_config(InverterConfig* out) {
+  if (!out) return false;
+  if (g_inv_mutex) xSemaphoreTake(g_inv_mutex, portMAX_DELAY);
+  *out = g_inverter_config;
+  if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
+  return out->ts_ms != 0;
 }
 
 bool inverter_query_raw(const char* cmd, String& out_payload) {

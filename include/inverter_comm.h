@@ -11,6 +11,15 @@
 // invalid. Occasional single dropouts are acceptable and must not invalidate.
 #define INVERTER_FAIL_INVALIDATE_THRESHOLD 3
 
+// QPIRI (configuration) read interval. These values change only when somebody
+// writes them - from the settings page or the inverter's front panel - so this
+// is about how fast a change should surface, not about resolution. Against that,
+// every read is another RS232 exchange on the shared 15 m cable that
+// doc/rj45_cable_wiring.md names first whenever CAN error counters climb: at
+// 5 minutes it adds ~288 exchanges a day to the ~28 800 QMOD+QPIGS pairs the
+// 3 s poll already sends, about 1 %.
+#define INVERTER_CONFIG_INTERVAL_MS 300000
+
 // Parsed status structure (subset of QPIGS fields)
 struct InverterState {
   float grid_voltage;           // BBB.B  Grid voltage [V]
@@ -68,6 +77,35 @@ bool inverter_comm_paused();
 // Thread-safe read of the latest battery discharge current [A].
 float inverter_batt_discharge_current();
 bool inverter_get_mode(char* out_code, char* out_name, size_t name_cap);
+
+// Inverter configuration, read from QPIRI. Separate from InverterState on
+// purpose: this is what the inverter is *allowed* to do (the counterpart of the
+// BMS limits arriving over CAN), it changes only when somebody writes it, and it
+// is sampled every INVERTER_CONFIG_INTERVAL_MS instead of every poll cycle.
+//
+// Only the five tokens worth storing are parsed here. The full 25-token mapping
+// stays in data/settings.js, which owns it so the layout can be corrected by
+// re-uploading web files without reflashing - the token order is model-dependent.
+struct InverterConfig {
+  float max_charge_a;    // QPIRI[14] total charge current limit (solar + grid)
+  float bulk_v;          // QPIRI[10] bulk / absorb voltage
+  float float_v;         // QPIRI[11] float voltage
+  float lvd_v;           // QPIRI[9]  low DC cutoff
+  float redischarge_v;   // QPIRI[22] SBU return: load goes back on the battery
+                         //           above this voltage
+  uint32_t ts_ms;        // millis() of the last successful read, 0 = never read
+};
+
+// Thread-safe snapshot of the last successfully read configuration. Returns
+// false while nothing has been read yet (ts_ms == 0), in which case `out` holds
+// zeros and must not be published anywhere.
+//
+// Deliberately NOT tied to g_inverter_data_valid: a paused or briefly dead link
+// does not make the configuration untrue, so the last known values stay
+// available to the UI. Storage has the stricter rule - influx.cpp writes a point
+// only when ts_ms advances, so an outage leaves a gap rather than a run of
+// values nobody actually read.
+bool inverter_get_config(InverterConfig* out);
 
 // Send an arbitrary command (e.g. "QPIRI", "QFLAG") synchronously and return the
 // response payload (contents inside '(' .. , without frame/CRC). Blocks up to ~1s

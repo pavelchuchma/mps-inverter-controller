@@ -64,7 +64,12 @@ static String pendingEvents;
 static SemaphoreHandle_t eventMutex = nullptr;
 
 // Append one timestamped sample (all measurements) to the batch buffer.
-static void append_sample(String& buf, time_t ts) {
+//
+// `on_grid` is false for the off-grid event snapshots influx_log_event() takes
+// from other tasks. Everything here is a snapshot of live state and is written
+// either way; the one exception is the configuration block, which keeps
+// bookkeeping of its own and must stay on a single thread. See there.
+static void append_sample(String& buf, time_t ts, bool on_grid) {
   char tsbuf[16];
   snprintf(tsbuf, sizeof(tsbuf), " %ld\n", (long)ts);
 
@@ -176,6 +181,44 @@ static void append_sample(String& buf, time_t ts) {
     if (!first) {
       line += tsbuf;
       buf += line;
+    }
+  }
+
+  // chajda-inverter-config — what the inverter is *allowed* to do, the
+  // counterpart of the BMS limits in chajda-battery-can. Read every
+  // INVERTER_CONFIG_INTERVAL_MS (5 min), so it gets its own measurement rather
+  // than extra fields on chajda-inverter, where all but one point in thirty
+  // would carry them.
+  //
+  // A point is written only when ts_ms has advanced, i.e. once per successful
+  // QPIRI. That is the whole rule: a paused or dead link writes nothing and
+  // leaves a gap for as long as the configuration went unconfirmed, instead of
+  // restating values nobody read. A read returning unchanged values still
+  // writes, which is what separates "unchanged" from "unknown" in Grafana.
+  //
+  // Grid path only: the static below is the one piece of state in this function,
+  // and append_sample() is also called from other tasks through
+  // influx_log_event(). Confining it to the influx task keeps it single-threaded
+  // without a lock - and eventMutex could not be used for it anyway, since
+  // influx_log_event() already holds that while calling in here. The cost is
+  // that a config read is stored at the next grid tick rather than at an event
+  // that happens to fall between, which is at most one sample interval.
+  if (on_grid) {
+    static uint32_t last_config_ts_ms = 0;
+    InverterConfig cfg = {};
+    if (inverter_get_config(&cfg) && cfg.ts_ms != last_config_ts_ms) {
+      last_config_ts_ms = cfg.ts_ms;
+      String line = "chajda-inverter-config ";
+      bool first = true;
+      appendFloat(line, first, "max_charge_a", cfg.max_charge_a);
+      appendFloat(line, first, "bulk_v", cfg.bulk_v);
+      appendFloat(line, first, "float_v", cfg.float_v);
+      appendFloat(line, first, "lvd_v", cfg.lvd_v);
+      appendFloat(line, first, "redischarge_v", cfg.redischarge_v);
+      if (!first) {
+        line += tsbuf;
+        buf += line;
+      }
     }
   }
 
@@ -297,7 +340,7 @@ void influx_log_event() {
   time_t now = time(nullptr);
   if (now <= 24 * 3600) return;  // NTP not set yet, timestamp would be bogus
   xSemaphoreTake(eventMutex, portMAX_DELAY);
-  append_sample(pendingEvents, now);
+  append_sample(pendingEvents, now, false);
   xSemaphoreGive(eventMutex);
 }
 
@@ -328,7 +371,7 @@ static void influx_task(void* arg) {
     // (otherwise the per-sample timestamp would be bogus). Skipped samples
     // still advance the flush counter so the cadence stays one POST/minute.
     if (WiFi.isConnected() && now > 24 * 3600) {
-      append_sample(buf, now);
+      append_sample(buf, now, true);
     }
     if (++count >= METRICS_SAMPLES_PER_FLUSH) {
       // One link-health point per flush, before the POST so it rides the same
