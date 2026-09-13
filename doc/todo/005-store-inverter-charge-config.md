@@ -214,6 +214,42 @@ of zoom, so a 15-minute threshold keeps meaning the same thing at every range.
   fetched by `/inv_config` too, but it is a capability list, not a setting.
   Nothing to store.
 
+## First deploy panicked — what it cost and what changed
+
+The first build of this (commit `b3e8fda`, flashed 2026-09-13 23:45) put the
+device into a **reboot loop**: `ESP_RST_PANIC` every ~3 seconds, 24 boots
+between 23:45:54 and 23:47:08, no data reaching InfluxDB and no `[INV] config`
+line ever written. Recovered by reflashing the previous firmware over the
+PlatformIO serial agent.
+
+Cause: the parser split the payload into `String toks[32]` on `inverter_task`,
+whose stack is 4096 B and which already spends ~1 kB of it on the
+`String toks[64]` inside `parse_qpigs_payload()`. Three seconds after boot is
+exactly when the task's first iteration reaches QPIRI.
+
+Three changes came out of it, all in `b3e8fda`'s successor:
+
+- **The parser allocates per token, not per payload.** `token_count()` /
+  `token_at()` walk the string and build one `String` per field read.
+  `parse_qpigs_payload()` still uses the array and is left alone, but nothing
+  new should copy that pattern.
+- **`inverter_task` stack 4096 → 6144.** The parser no longer needs it, but the
+  task had no headroom to absorb *anything*, which is what made a routine
+  addition fatal.
+- **The first QPIRI waits `INVERTER_CONFIG_FIRST_DELAY_MS` (60 s) after boot.**
+  This is the part worth keeping as a habit: a fault in code that runs three
+  seconds into boot costs remote access entirely, because the device never stays
+  up long enough to serve `/app.log` or accept a new image over the network. Had
+  the serial agent not been reachable, this would have needed a drive to the
+  site. New code paths on a device that cannot be touched should run *after* the
+  device is reachable, not before.
+
+The lesson generalises past this ticket: there is no runtime visibility of stack
+headroom anywhere in this firmware, so every task's margin is an assumption. The
+first-read log line now prints `uxTaskGetStackHighWaterMark()` for
+`inverter_task`; doing the same for the other tasks would turn the next overflow
+into a warning rather than a reboot loop.
+
 ## Out of scope
 
 The expected values in `settings.js` (rows `26`, `27`, `29`) are still the ones

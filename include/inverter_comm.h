@@ -20,6 +20,11 @@
 // 3 s poll already sends, about 1 %.
 #define INVERTER_CONFIG_INTERVAL_MS 300000
 
+// How long after boot the first QPIRI waits. Nothing needs it sooner - it is a
+// 5-minute series - and holding it back keeps boot itself free of the newest,
+// least-proven code path, so a fault there cannot cost remote access.
+#define INVERTER_CONFIG_FIRST_DELAY_MS 60000
+
 // Parsed status structure (subset of QPIGS fields)
 struct InverterState {
   float grid_voltage;           // BBB.B  Grid voltage [V]

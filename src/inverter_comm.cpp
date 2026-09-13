@@ -177,6 +177,57 @@ static bool send_command_and_get_payload(const String& cmd, String& out_payload)
 // snapshot; ts_ms stays 0 until the first good QPIRI.
 static InverterConfig g_inverter_config = {};
 
+// Return the number of space-separated tokens in `p`, allocating nothing.
+static int token_count(const String& p) {
+  int n = 0, len = p.length(), i = 0;
+  while (i < len) {
+    while (i < len && p.charAt(i) == ' ') i++;
+    if (i >= len) break;
+    n++;
+    while (i < len && p.charAt(i) != ' ') i++;
+  }
+  return n;
+}
+
+// Copy token `idx` (0-based) into `out`. Returns false if there are fewer.
+// One String is built per call, deliberately: the obvious version that splits
+// the whole payload into an array cost 32 Strings of stack and panicked
+// inverter_task three seconds into every boot (2026-09-13, a 24-reboot loop
+// that needed a reflash over the serial agent to break). parse_qpigs_payload()
+// below still does it that way and is left alone, but nothing new should.
+static bool token_at(const String& p, int idx, String& out) {
+  int len = p.length(), i = 0, n = 0;
+  while (i < len) {
+    while (i < len && p.charAt(i) == ' ') i++;
+    if (i >= len) break;
+    int start = i;
+    while (i < len && p.charAt(i) != ' ') i++;
+    if (n == idx) {
+      out = p.substring(start, i);
+      return true;
+    }
+    n++;
+  }
+  return false;
+}
+
+// A clean number: digits with at most one dot, optionally signed. toFloat()
+// turns anything else silently into 0.0, which would look like a real setting.
+static bool qpiri_num_ok(const String& v) {
+  if (v.length() == 0) return false;
+  int i = (v[0] == '-' || v[0] == '+') ? 1 : 0;
+  if (i >= (int)v.length()) return false;
+  int dots = 0;
+  for (; i < (int)v.length(); ++i) {
+    if (v[i] == '.') {
+      if (++dots > 1) return false;
+    } else if (!isdigit((unsigned char)v[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // Parse QPIRI and keep the five tokens worth storing. Token indices are the
 // model-dependent layout documented in data/settings.js; the payload this
 // inverter returns is in doc/todo/005-store-inverter-charge-config.md.
@@ -187,58 +238,30 @@ static InverterConfig g_inverter_config = {};
 // reason: a corrupted token that slips through would be stored as a
 // configuration change that never happened.
 static bool parse_qpiri_payload(const String& p) {
-  const int MAX_TOK = 32;
-  String toks[MAX_TOK];
-  int tcount = 0;
-  int start = 0;
-  for (int i = 0; i <= (int)p.length() && tcount < MAX_TOK; ++i) {
-    if (i == (int)p.length() || p.charAt(i) == ' ') {
-      if (i - start > 0) toks[tcount++] = p.substring(start, i);
-      start = i + 1;
-    }
-  }
-
   // Index 22 is the highest one read, so anything shorter is a truncated frame
-  // or a different model - in which case index 14 and 22 would quietly point at
-  // some other field rather than fail.
+  // or a different model - in which case indices 14 and 22 would quietly point
+  // at some other field rather than fail.
   const int EXPECTED_TOKENS = 25;
-  if (tcount < EXPECTED_TOKENS) return false;
+  if (token_count(p) < EXPECTED_TOKENS) return false;
 
-  // A clean number: digits with at most one dot, optionally signed. toFloat()
-  // turns anything else silently into 0.0, which would look like a real setting.
-  auto num_ok = [](const String& v) -> bool {
-    if (v.length() == 0) return false;
-    int i = (v[0] == '-' || v[0] == '+') ? 1 : 0;
-    if (i >= (int)v.length()) return false;
-    int dots = 0;
-    for (; i < (int)v.length(); ++i) {
-      if (v[i] == '.') {
-        if (++dots > 1) return false;
-      } else if (!isdigit((unsigned char)v[i])) {
-        return false;
-      }
-    }
-    return true;
-  };
-  auto in_range = [](float v, float lo, float hi) { return v >= lo && v <= hi; };
-
-  const int IDX[5] = {14, 10, 11, 9, 22};
-  for (int i = 0; i < 5; ++i) {
-    if (!num_ok(toks[IDX[i]])) return false;
-  }
-
+  // {destination, token index, low, high}
+  struct Field { float* dst; int idx; float lo; float hi; };
   InverterConfig c = {};
-  c.max_charge_a = toks[14].toFloat();
-  c.bulk_v = toks[10].toFloat();
-  c.float_v = toks[11].toFloat();
-  c.lvd_v = toks[9].toFloat();
-  c.redischarge_v = toks[22].toFloat();
-
-  if (!in_range(c.max_charge_a, 0.0f, 100.0f)) return false;
-  if (!in_range(c.bulk_v, 40.0f, 60.0f)) return false;
-  if (!in_range(c.float_v, 40.0f, 60.0f)) return false;
-  if (!in_range(c.lvd_v, 35.0f, 50.0f)) return false;
-  if (!in_range(c.redischarge_v, 44.0f, 60.0f)) return false;
+  const Field fields[5] = {
+    {&c.max_charge_a,  14,  0.0f, 100.0f},
+    {&c.bulk_v,        10, 40.0f,  60.0f},
+    {&c.float_v,       11, 40.0f,  60.0f},
+    {&c.lvd_v,          9, 35.0f,  50.0f},
+    {&c.redischarge_v, 22, 44.0f,  60.0f},
+  };
+  String tok;
+  for (int i = 0; i < 5; ++i) {
+    if (!token_at(p, fields[i].idx, tok)) return false;
+    if (!qpiri_num_ok(tok)) return false;
+    float v = tok.toFloat();
+    if (v < fields[i].lo || v > fields[i].hi) return false;
+    *fields[i].dst = v;
+  }
 
   c.ts_ms = millis();
   // millis() is 0 only in the first millisecond after boot, long before any
@@ -267,9 +290,13 @@ static bool parse_qpiri_payload(const String& p) {
                  prev.float_v, c.float_v, prev.lvd_v, c.lvd_v,
                  prev.redischarge_v, c.redischarge_v);
   } else if (prev.ts_ms == 0) {
+    // First read of this boot. The stack headroom rides along because this task
+    // is where the parser runs and where the 2026-09-13 overflow happened -
+    // a number in the log beats assuming there is room.
     printInfo("[INV] config: chg %.0f A  bulk %.1f V  float %.1f V  LVD %.1f V  "
-              "SBU %.1f V", c.max_charge_a, c.bulk_v, c.float_v, c.lvd_v,
-              c.redischarge_v);
+              "SBU %.1f V  (task stack free %u B)",
+              c.max_charge_a, c.bulk_v, c.float_v, c.lvd_v, c.redischarge_v,
+              (unsigned)uxTaskGetStackHighWaterMark(NULL));
   }
   return true;
 }
@@ -439,8 +466,15 @@ static void inverter_task(void* arg) {
     // a second caller would only add contention on the one shared UART. A failed
     // read is not counted towards consec_fails - the configuration is not what
     // g_inverter_data_valid speaks for, and it retries on the next interval.
-    if (last_config_ms == 0
-        || millis() - last_config_ms >= INVERTER_CONFIG_INTERVAL_MS) {
+    //
+    // The first read waits INVERTER_CONFIG_FIRST_DELAY_MS rather than running on
+    // the first pass. If anything in here ever panics again, the device is
+    // already on the network and serving /app.log by then, so it can be
+    // diagnosed and reflashed remotely - a crash three seconds into boot leaves
+    // a loop that only the serial agent can break (2026-09-13).
+    if (millis() >= INVERTER_CONFIG_FIRST_DELAY_MS
+        && (last_config_ms == 0
+            || millis() - last_config_ms >= INVERTER_CONFIG_INTERVAL_MS)) {
       last_config_ms = millis();
       payload = String();
       if (send_command_and_get_payload("QPIRI", payload)) {
@@ -485,8 +519,13 @@ void inverter_comm_init(int rx_pin, int tx_pin) {
   // Create background task
   xTaskCreatePinnedToCore(
     inverter_task,
+    // 6144, not 4096: parse_qpigs_payload() alone puts String toks[64] (~1 kB)
+    // on this stack, which left too little headroom to add anything - the QPIRI
+    // parser overflowed it on 2026-09-13 and panicked every boot. The parser no
+    // longer allocates per token, but the margin stays; 2 kB of RAM is cheap
+    // against a reboot loop on hardware that is 200 km away.
     "inverter_task",
-    4096,
+    6144,
     NULL,
     1,
     NULL,
