@@ -305,12 +305,13 @@ static void pylontech_can_task(void* arg) {
   uint8_t burst_groups = 0;
   bool burst_active = false;
   unsigned long burst_start_ms = 0;
-  // Also arms the silence probe: initialized to now so a bus that is quiet
-  // from boot starts probing after the same 10 s the sniffer used.
+  // Initialized to now so a bus that is quiet from boot logs its silence once
+  // after the same 10 s the sniffer used.
   unsigned long last_frame_ms = millis();
 
-  bool heartbeat_started = false;
-  unsigned long last_heartbeat = 0;
+  // Zero-transmit build: this firmware never puts a frame on the wire, so the
+  // flag only tracks whether the current silence has already been logged.
+  bool was_silent = false;
   unsigned long last_status = millis();
 
   // Transition tracking for the Serial/app.log lines. Per-frame printing is
@@ -348,9 +349,9 @@ static void pylontech_can_task(void* arg) {
       last_frame_ms = now;
       // A frame proves there is a peer, so recovery can be prompt again.
       recover_interval_ms = CAN_RECOVER_MIN_INTERVAL_MS;
-      if (heartbeat_started) {
-        printInfo("[CAN] frames arriving, stopping the 0x305 silence probe");
-        heartbeat_started = false;
+      if (was_silent) {
+        printInfo("[CAN] frames arriving again after silence");
+        was_silent = false;
       }
       if (!burst_active) {
         burst_active = true;
@@ -428,24 +429,19 @@ static void pylontech_can_task(void* arg) {
       }
     }
 
-    // Silence probe, the sniffer's transmit policy — see the block comment at
-    // CAN_SILENCE_BEFORE_HEARTBEAT_MS. Never fires while frames arrive.
-    if (!heartbeat_started
+    // Zero transmit: this firmware never sends 0x305 (nor anything else). The
+    // 1 Hz probe it used to send into a silent bus was unacknowledged, drove
+    // TEC to bus-off, and — captured on the short, terminated cable on
+    // 2026-09-13 — held the link down in a self-inflicted bus-off/recovery
+    // loop that only a driver restart or a monitor connect could break. The
+    // pack broadcasts unprompted, so the hardware ACK of normal mode (emitted
+    // only while the pack itself transmits) is all this side ever needs.
+    // Silence is logged once per episode, no frame is put on the wire.
+    if (!was_silent
         && millis() - last_frame_ms > CAN_SILENCE_BEFORE_HEARTBEAT_MS) {
-      printWarning("[CAN] silent for %lu s, starting 0x305 probe at 1 Hz",
+      printWarning("[CAN] silent for %lu s (zero-transmit build: not probing)",
                    (unsigned long)(CAN_SILENCE_BEFORE_HEARTBEAT_MS / 1000));
-      heartbeat_started = true;
-      last_heartbeat = 0;
-    }
-    if (heartbeat_started
-        && millis() - last_heartbeat >= CAN_HEARTBEAT_INTERVAL_MS) {
-      last_heartbeat = millis();
-      twai_message_t hb;
-      memset(&hb, 0, sizeof(hb));
-      hb.identifier = CAN_ID_HEARTBEAT;
-      hb.data_length_code = 8;
-      hb.ss = 1;  // single shot: the controller must not retry this
-      if (twai_transmit(&hb, pdMS_TO_TICKS(100)) != ESP_OK) tx_enqueue_failed++;
+      was_silent = true;
     }
 
     // The 30 s Serial line, and with it the only place bus-off is looked for.

@@ -85,7 +85,8 @@ static size_t read_until_cr(HardwareSerial& s, uint8_t* buf, size_t max_len, uns
   return idx;
 }
 
-// Debug helper: print payload (between '(' and CRC), raw hex and ASCII
+// Debug helper: one line with the payload (between '(' and CRC). Reduced from
+// the former payload+hex+ascii triple to a single line per message.
 static void debug_print_rx(const uint8_t* rx, size_t rx_len) {
   if (!rx || rx_len == 0) return;
 
@@ -96,20 +97,10 @@ static void debug_print_rx(const uint8_t* rx, size_t rx_len) {
     size_t payload_ascii_len = (payload_len_with_paren > 0) ? payload_len_with_paren - 1 : 0;
     if (payload_ascii_len > 0) {
       String payload_str((const char*)(rx + 1), payload_ascii_len);
-      Serial.print("[INV] RX (payload): ");
+      Serial.print("[INV] RX: ");
       Serial.println(payload_str);
     }
   }
-
-  Serial.print("[INV] RX (hex): ");
-  for (size_t i = 0; i < rx_len; ++i) {
-    Serial.printf("%02X ", rx[i]);
-  }
-  Serial.println();
-
-  Serial.print("[INV] RX (ascii): ");
-  Serial.write(rx, rx_len);
-  Serial.println();
 }
 
 // Send ASCII command and read response. Returns payload (inside '('.. ).
@@ -269,22 +260,20 @@ static void print_status_and_mode_snapshot() {
   valid = g_inverter_data_valid;
   if (g_inv_mutex) xSemaphoreGive(g_inv_mutex);
 
-  Serial.println("--- Inverter Status Snapshot ---");
+  // One-line snapshot, reduced from the former multi-line block.
   if (!valid) {
-    Serial.println("Read failed, no data available");
+    Serial.println("[INV] no data");
   } else {
-    Serial.printf("Mode: %c (%s)\n", mode_code ? mode_code : '?', mode_name);
-    Serial.printf("Grid V: %.2f V, Grid F: %.2f Hz\n", s.grid_voltage, s.grid_frequency);
-    Serial.printf("AC Out V: %.2f V, AC Out F: %.2f Hz\n", s.ac_out_voltage, s.ac_out_frequency);
-    Serial.printf("Apparent VA: %d VA, Active W: %d W, Load %%: %d\n", s.ac_apparent_va, s.ac_active_w, s.load_percent);
-    Serial.printf("BUS V: %.2f V, Batt V: %.2f V, Batt Charge I: %.2f A, Batt SOC: %d %%\n", s.bus_voltage, s.batt_voltage, s.batt_charge_current, s.batt_soc);
-    Serial.printf("Heatsink: %.2f C, PV I: %.2f A, PV V: %.2f V\n", s.heatsink_temp, s.pv_input_current_batt, s.pv_input_voltage);
-    Serial.printf("Batt V from SCC: %.2f V, Batt Disch I: %.2f A\n", s.batt_voltage_from_scc, s.batt_discharge_current);
-    Serial.printf("Device status bits: 0x%02X, Additional status bits: 0x%02X\n", s.device_status_bits, s.additional_status_bits);
-    Serial.printf("Batt fan offset: %d (10mV), EEPROM ver: %d, PV charging power: %d W\n", s.batt_fan_offset_10mv, s.eeprom_version, s.pv_charging_power);
-    Serial.printf("Timestamp: %u ms\n", (unsigned)s.ts_ms);
+    Serial.printf("[INV] mode=%c(%s) ACout=%.1fV/%.2fHz VA=%d W=%d load=%d%% "
+                  "BUS=%.1fV batt=%.2fV chg=%.2fA SOC=%d%% heatsink=%.1fC "
+                  "PV=%.1fV/%.2fA dischg=%.2fA dev=0x%02X add=0x%02X\n",
+                  mode_code ? mode_code : '?', mode_name,
+                  s.ac_out_voltage, s.ac_out_frequency,
+                  s.ac_apparent_va, s.ac_active_w, s.load_percent,
+                  s.bus_voltage, s.batt_voltage, s.batt_charge_current, s.batt_soc,
+                  s.heatsink_temp, s.pv_input_voltage, s.pv_input_current_batt,
+                  s.batt_discharge_current, s.device_status_bits, s.additional_status_bits);
   }
-  Serial.println("---------------------------------");
 }
 
 // Background task that queries QMOD and QPIGS periodically

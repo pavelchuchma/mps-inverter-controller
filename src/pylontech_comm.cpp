@@ -223,7 +223,6 @@ static bool pylontech_read_one(PylontechState& out) {
     Serial.printf("[BAT] no response from battery console (waited %lu ms)\n", dt);
     return false;
   }
-  Serial.printf("[BAT] response: %u bytes in %lu ms\n", (unsigned)resp.length(), dt);
   if (!parse_pwr_payload(resp, out)) {
     Serial.println("[BAT] failed to parse pwr response");
     return false;
@@ -240,23 +239,20 @@ static void print_status_snapshot() {
   valid = g_pylontech_data_valid;
   if (g_pylon_mutex) xSemaphoreGive(g_pylon_mutex);
 
-  Serial.println("--- Battery Status Snapshot ---");
+  // One-line snapshot, reduced from the former multi-line block.
   if (!valid) {
-    Serial.println("Read failed, no data available");
+    Serial.println("[BAT] no data");
   } else {
-    Serial.printf("Pack %d  Status: %s  CFet:%s DFet:%s Heater:%s\n",
+    Serial.printf("[BAT] pack%d %s CFet:%s DFet:%s Heater:%s %.2fV(max %.2f) "
+                  "%.2fA %.1fC SoC=%d%% chgTimes=%d ev bat:0x%X pwr:0x%X "
+                  "flt:0x%X alm:0x%X\n",
                   s.pack_index, s.basic_status,
                   s.cfet_on ? "ON" : "OFF", s.dfet_on ? "ON" : "OFF",
-                  s.heater_on ? "ON" : "OFF");
-    Serial.printf("Voltage: %.2f V (max %.2f V), Current: %.2f A, Temp: %.2f C, SoC: %d %%\n",
-                  s.voltage, s.max_voltage, s.current, s.temperature, s.soc);
-    Serial.printf("Total capacity: %d mAH, Charge times: %d\n",
-                  s.total_capacity_mah, s.charge_times);
-    Serial.printf("Events bat:0x%X pwr:0x%X  Fault:0x%X  Alarm:0x%X\n",
-                  s.bat_events, s.power_events, s.system_fault, s.system_alarm);
-    Serial.printf("Timestamp: %u ms\n", (unsigned)s.ts_ms);
+                  s.heater_on ? "ON" : "OFF",
+                  s.voltage, s.max_voltage, s.current, s.temperature, s.soc,
+                  s.charge_times, s.bat_events, s.power_events,
+                  s.system_fault, s.system_alarm);
   }
-  Serial.println("-------------------------------");
 }
 
 // See pylontech_comm_set_paused() in the header for why this exists.
