@@ -1,6 +1,8 @@
 #include "pylontech_can.h"
+#include "influx.h"
 #include "utils.h"
 #include <driver/twai.h>
+#include <math.h>
 #include <string.h>
 
 // Frame identifiers broadcast by the BMS, see doc/battery_can_spec.md.
@@ -29,6 +31,15 @@
 // day, keeping roughly the last 8 hours. Put it back to 20 min once the
 // question is answered.
 #define CAN_LOG_INTERVAL_MS (60UL * 1000UL)
+
+// Tier C event triggers (doc/battery_can_data_spec.md). A change worth seeing
+// at its real time rather than at the next grid point calls influx_log_event(),
+// which snapshots every measurement off-grid and forces a flush. The rate limit
+// is absolute, not a multiple of METRICS_SAMPLE_INTERVAL_MS: relaxing the grid
+// must not make a CCL step harder to see, and a dithering CCL must not be able
+// to flood the batch either way.
+#define CAN_EVENT_MIN_INTERVAL_MS 30000
+#define CAN_EVENT_CCL_DELTA_A 5.0f
 
 // Trace every 0x351 to the serial monitor, so the link can be watched live
 // during bring-up. 0x351 arrives once per burst (every 2 s on this pack), so
@@ -74,33 +85,21 @@
 // per-second on a dead bus, and app.log is on flash.
 #define CAN_BUSOFF_LOG_INTERVAL_MS 600000
 
-// Frame groups touched by the current burst, for the range check below.
+// Frame groups touched by the current burst: which of them arrived decides
+// what the commit below folds into the accumulator and which event triggers
+// are worth evaluating.
 #define CAN_GROUP_LIMITS 0x01
 #define CAN_GROUP_SOC 0x02
 #define CAN_GROUP_MEASURED 0x04
 #define CAN_GROUP_ALARMS 0x08
 #define CAN_GROUP_REQUESTS 0x10
 
-// --- bring-up scaffold, removed in commit 2 -------------------------------
-// CAN's CRC already rejects corrupted frames, so this is not noise filtering:
-// its only job is to catch a wrong layout assumption (byte order, scaling)
-// before a mis-scaled ccl_a can reach anything. Once /can has confirmed the
-// layout the encoding is fixed for the life of the pack, and a hardcoded
-// window can then only misfire — see doc/battery_can_data_spec.md.
-#define CAN_BRINGUP_RANGE_CHECK 1
-#if CAN_BRINGUP_RANGE_CHECK
-#define CAN_RANGE_CHARGE_V_MIN 40.0f
-#define CAN_RANGE_CHARGE_V_MAX 60.0f
-#define CAN_RANGE_LIMIT_A_MIN 0.0f
-#define CAN_RANGE_LIMIT_A_MAX 500.0f
-#define CAN_RANGE_VOLTAGE_V_MIN 30.0f
-#define CAN_RANGE_VOLTAGE_V_MAX 60.0f
-#define CAN_RANGE_CURRENT_A_MIN -500.0f
-#define CAN_RANGE_CURRENT_A_MAX 500.0f
-#define CAN_RANGE_TEMP_C_MIN -30.0f
-#define CAN_RANGE_TEMP_C_MAX 80.0f
-#endif
-// -------------------------------------------------------------------------
+// The bring-up range check that used to sit here is gone (commit 2 of
+// doc/battery_can_data_spec.md): /can confirmed the layout, the encoding is
+// fixed for the life of the pack, and from here a hardcoded window could only
+// misfire. The standing validation is now the console cross-check — the same
+// voltage, current, temperature and SoC arrive over an independent link, and
+// the two stored series have to agree.
 
 static int g_tx_pin = -1;
 static int g_rx_pin = -1;
@@ -109,6 +108,12 @@ static SemaphoreHandle_t g_can_mutex = NULL;
 static PylontechCanState g_can_state = {};
 static PylontechCanLink g_can_link = {};
 static PylontechCanRaw g_can_raw[CAN_RAW_SLOTS] = {};
+
+// current_a folded over the bursts since the metrics sampler last read it, see
+// pylontech_can_take_current_range(). Guarded by g_can_mutex.
+static float g_cur_min_a = 0.0f;
+static float g_cur_max_a = 0.0f;
+static bool g_cur_range_have = false;
 
 // Little-endian field accessors. The BMS uses 16-bit values throughout; which
 // of them are signed is documented in battery_can_spec.md.
@@ -130,8 +135,7 @@ static bool state_is_fresh(const PylontechCanState& s, uint32_t now) {
 // Record the raw payload for /can into the task-local table; the table is
 // published to g_can_raw once per burst, not per frame — todo 002 put the
 // per-frame mutex take on the suspect list, so the receive path stays free of
-// any shared state. Kept outside the range check so a rejected burst is still
-// visible byte for byte, which is the whole point of the check.
+// any shared state.
 static void record_raw(PylontechCanRaw* raw, const twai_message_t& m, uint32_t now) {
   int free_slot = -1;
   for (int i = 0; i < CAN_RAW_SLOTS; ++i) {
@@ -203,31 +207,18 @@ static uint8_t decode_frame(const twai_message_t& m, PylontechCanState* s, uint3
   return 0;
 }
 
-#if CAN_BRINGUP_RANGE_CHECK
-static bool in_range(float v, float lo, float hi) {
-  return v >= lo && v <= hi;
-}
-
-// Check only the groups this burst actually carried: a group that has not been
-// seen yet still holds its zero default, which would fail every window.
-static bool burst_in_range(const PylontechCanState& s, uint8_t groups) {
-  if (groups & CAN_GROUP_LIMITS) {
-    if (!in_range(s.charge_v, CAN_RANGE_CHARGE_V_MIN, CAN_RANGE_CHARGE_V_MAX)) return false;
-    if (!in_range(s.ccl_a, CAN_RANGE_LIMIT_A_MIN, CAN_RANGE_LIMIT_A_MAX)) return false;
-    if (!in_range(s.dcl_a, CAN_RANGE_LIMIT_A_MIN, CAN_RANGE_LIMIT_A_MAX)) return false;
-  }
-  if (groups & CAN_GROUP_SOC) {
-    if (s.soc < 0 || s.soc > 100) return false;
-    if (s.soh < 0 || s.soh > 100) return false;
-  }
-  if (groups & CAN_GROUP_MEASURED) {
-    if (!in_range(s.voltage_v, CAN_RANGE_VOLTAGE_V_MIN, CAN_RANGE_VOLTAGE_V_MAX)) return false;
-    if (!in_range(s.current_a, CAN_RANGE_CURRENT_A_MIN, CAN_RANGE_CURRENT_A_MAX)) return false;
-    if (!in_range(s.temp_c, CAN_RANGE_TEMP_C_MIN, CAN_RANGE_TEMP_C_MAX)) return false;
-  }
+// Queue an off-grid snapshot, rate-limited; returns false when the limit held it
+// back, so the caller can keep the request pending instead of losing it. That
+// matters because the rate limit is 30 s and the triggers are edges: a change
+// that arrives too soon after the last point would otherwise never be stored.
+// `last_ms` is the task-local time of the last snapshot, zero meaning none yet.
+static bool log_can_event(unsigned long* last_ms) {
+  unsigned long now = millis();
+  if (*last_ms != 0 && now - *last_ms < CAN_EVENT_MIN_INTERVAL_MS) return false;
+  *last_ms = now;
+  influx_log_event();
   return true;
 }
-#endif
 
 static void print_bus_status(const char* prefix) {
   twai_status_info_t st;
@@ -322,6 +313,15 @@ static void pylontech_can_task(void* arg) {
   uint32_t prev_protection = 0;
   uint32_t prev_alarm = 0;
   uint8_t prev_request_flags = 0;
+  // Last CCL that produced an event point, not the last one received: the
+  // trigger is a step away from what is already on the timeline, so a slow
+  // drift still fires once it has accumulated CAN_EVENT_CCL_DELTA_A.
+  float prev_logged_ccl = 0.0f;
+  bool have_prev_ccl = false;
+  unsigned long last_event_ms = 0;
+  // A trigger fired but the rate limit has not expired yet; emitted as soon as
+  // it does, so a burst of changes costs one point but loses none of them.
+  bool event_pending = false;
 
   // Enqueue failures, kept apart from the driver's own count of transmissions
   // that failed on the wire; link.tx_failed is the sum of the two.
@@ -370,47 +370,71 @@ static void pylontech_can_task(void* arg) {
         && (millis() - last_frame_ms >= CAN_BURST_GAP_MS
             || millis() - burst_start_ms >= CAN_BURST_MAX_MS)) {
       burst_active = false;
-      bool accept = true;
-#if CAN_BRINGUP_RANGE_CHECK
-      accept = burst_in_range(burst, burst_groups);
-      if (!accept) link.rejected++;
-#endif
-      if (accept) scratch = burst;
-      // The one mutex take of the steady state, every ~2 s: raw payloads go
-      // out even for a rejected burst (that is what the range check is for),
-      // the decoded state only when accepted, and the link counters ride
-      // along — the driver-side fields in them refresh in the minute branch,
-      // so /can sees those at most a minute stale.
+      scratch = burst;
+      // The one mutex take of the steady state, every ~2 s: raw payloads, the
+      // decoded state and the link counters go out together. The driver-side
+      // fields in the counters refresh in the minute branch, so /can sees those
+      // at most a minute stale.
       if (g_can_mutex) xSemaphoreTake(g_can_mutex, portMAX_DELAY);
       memcpy(g_can_raw, raw, sizeof(g_can_raw));
-      if (accept) g_can_state = scratch;
+      g_can_state = scratch;
       g_can_link = link;
+      // Fold this burst's current into the range the metrics sampler will read.
+      // Under the same mutex as the state it belongs to, so a sampler that
+      // takes the range cannot get one from a burst the state does not show.
+      if (burst_groups & CAN_GROUP_MEASURED) {
+        if (!g_cur_range_have) {
+          g_cur_min_a = scratch.current_a;
+          g_cur_max_a = scratch.current_a;
+          g_cur_range_have = true;
+        } else {
+          if (scratch.current_a < g_cur_min_a) g_cur_min_a = scratch.current_a;
+          if (scratch.current_a > g_cur_max_a) g_cur_max_a = scratch.current_a;
+        }
+      }
       if (g_can_mutex) xSemaphoreGive(g_can_mutex);
-      if (accept) {
-        if (burst_groups & CAN_GROUP_ALARMS) {
-          if (have_prev_alarms
-              && (scratch.protection != prev_protection || scratch.alarm != prev_alarm)) {
-            printWarning("[CAN] protection 0x%04X -> 0x%04X, alarm 0x%04X -> 0x%04X",
-                         (unsigned)prev_protection, (unsigned)scratch.protection,
-                         (unsigned)prev_alarm, (unsigned)scratch.alarm);
-          }
-          prev_protection = scratch.protection;
-          prev_alarm = scratch.alarm;
-          have_prev_alarms = true;
+
+      // Tier C triggers. Each one is a change that has to land in InfluxDB at
+      // its real time rather than at the next grid point; the log lines below
+      // are the same transitions, on the same conditions, into app.log.
+      if (burst_groups & CAN_GROUP_LIMITS) {
+        // A CCL step, or any crossing of zero. Zero means "do not charge" and
+        // is worth a point whatever the step size, so it is tested separately
+        // from the delta. The very first burst only seeds the baseline.
+        if (!have_prev_ccl) {
+          prev_logged_ccl = scratch.ccl_a;
+          have_prev_ccl = true;
+        } else if (fabsf(scratch.ccl_a - prev_logged_ccl) >= CAN_EVENT_CCL_DELTA_A
+                   || (scratch.ccl_a == 0.0f) != (prev_logged_ccl == 0.0f)) {
+          prev_logged_ccl = scratch.ccl_a;
+          event_pending = true;
         }
-        if (burst_groups & CAN_GROUP_REQUESTS) {
-          if (have_prev_requests && scratch.request_flags != prev_request_flags) {
-            printInfo("[CAN] request flags 0x%02X -> 0x%02X (chg %d dchg %d force %d/%d full %d)",
-                      prev_request_flags, scratch.request_flags,
-                      can_charge_enabled(scratch.request_flags),
-                      can_discharge_enabled(scratch.request_flags),
-                      can_force_charge_1(scratch.request_flags),
-                      can_force_charge_2(scratch.request_flags),
-                      can_full_charge_requested(scratch.request_flags));
-          }
-          prev_request_flags = scratch.request_flags;
-          have_prev_requests = true;
+      }
+      if (burst_groups & CAN_GROUP_ALARMS) {
+        if (have_prev_alarms
+            && (scratch.protection != prev_protection || scratch.alarm != prev_alarm)) {
+          printWarning("[CAN] protection 0x%04X -> 0x%04X, alarm 0x%04X -> 0x%04X",
+                       (unsigned)prev_protection, (unsigned)scratch.protection,
+                       (unsigned)prev_alarm, (unsigned)scratch.alarm);
+          event_pending = true;
         }
+        prev_protection = scratch.protection;
+        prev_alarm = scratch.alarm;
+        have_prev_alarms = true;
+      }
+      if (burst_groups & CAN_GROUP_REQUESTS) {
+        if (have_prev_requests && scratch.request_flags != prev_request_flags) {
+          printInfo("[CAN] request flags 0x%02X -> 0x%02X (chg %d dchg %d force %d/%d full %d)",
+                    prev_request_flags, scratch.request_flags,
+                    can_charge_enabled(scratch.request_flags),
+                    can_discharge_enabled(scratch.request_flags),
+                    can_force_charge_1(scratch.request_flags),
+                    can_force_charge_2(scratch.request_flags),
+                    can_full_charge_requested(scratch.request_flags));
+          event_pending = true;
+        }
+        prev_request_flags = scratch.request_flags;
+        have_prev_requests = true;
       }
     }
 
@@ -427,7 +451,16 @@ static void pylontech_can_task(void* arg) {
         printWarning("[CAN] link down: no complete burst for %lu ms",
                      (unsigned long)CAN_STALE_MS);
       }
+      // Both directions are worth a point: the one before the gap shows what
+      // the pack was doing when it stopped talking, the one after shows what
+      // changed while it was quiet.
+      event_pending = true;
     }
+
+    // The single emit point for every tier C trigger above. Retried each
+    // iteration (~200 ms) while the rate limit holds, which is what keeps a
+    // change that arrived just after the last point from being dropped.
+    if (event_pending && log_can_event(&last_event_ms)) event_pending = false;
 
     // Zero transmit: this firmware never sends 0x305 (nor anything else). The
     // 1 Hz probe it used to send into a silent bus was unacknowledged, drove
@@ -598,4 +631,18 @@ void pylontech_can_get_raw(PylontechCanRaw* out) {
   if (g_can_mutex) xSemaphoreTake(g_can_mutex, portMAX_DELAY);
   memcpy(out, g_can_raw, sizeof(g_can_raw));
   if (g_can_mutex) xSemaphoreGive(g_can_mutex);
+}
+
+bool pylontech_can_take_current_range(float* lo, float* hi) {
+  if (!lo || !hi) return false;
+  bool have = false;
+  if (g_can_mutex) xSemaphoreTake(g_can_mutex, portMAX_DELAY);
+  have = g_cur_range_have;
+  if (have) {
+    *lo = g_cur_min_a;
+    *hi = g_cur_max_a;
+    g_cur_range_have = false;  // the next window starts from the next burst
+  }
+  if (g_can_mutex) xSemaphoreGive(g_can_mutex);
+  return have;
 }

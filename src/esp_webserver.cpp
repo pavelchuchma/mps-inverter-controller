@@ -123,6 +123,20 @@ static String makeStatusJson() {
     doc["phns"]  = net_stale + snapshot_age_secs;
   }
 
+  // Battery CAN link. Only the fields the UI actually shows plus the two the
+  // cross-check row needs; the full decoded set stays on /can, which is the
+  // diagnostic endpoint. Sent even when stale so the UI can grey the row rather
+  // than blank it.
+  PylontechCanState can = {};
+  pylontech_can_get(&can);
+  doc["cav"] = pylontech_can_valid();
+  doc["ccl"] = can.ccl_a;
+  doc["dcl"] = can.dcl_a;
+  doc["chv"] = can.charge_v;
+  doc["soh"] = can.soh;
+  doc["cbv"] = can.voltage_v;
+  doc["cbc"] = can.current_a;   // signed, same convention as bc
+
   doc["slp"] = inverter_comm_paused() || pylontech_comm_paused();  // serial links paused
 
   doc["rr"]  = (int)g_reset_reason_ws;
@@ -311,7 +325,6 @@ static void handleCan() {
   link["tec"] = lk.tx_err;
   link["recoveries"] = lk.recoveries;
   link["tx_failed"] = lk.tx_failed;
-  link["rejected"] = lk.rejected;
   link["last_rx_age_ms"] = lk.last_rx_ms ? (now - lk.last_rx_ms) : 0;
 
   String out;

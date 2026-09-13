@@ -11,6 +11,7 @@
 #include "config.h"
 #include "credentials.h"
 #include "inverter_comm.h"
+#include "pylontech_can.h"
 #include "pylontech_comm.h"
 #include "phone.h"
 #include "relay.h"
@@ -127,6 +128,57 @@ static void append_sample(String& buf, time_t ts) {
     }
   }
 
+  // chajda-battery-can — the same pack over the CAN link, plus the fields only
+  // CAN carries (CCL/DCL, SoH, the 0x35C request flags). Gated on
+  // pylontech_can_valid() exactly as the block above is on
+  // g_pylontech_data_valid, so an outage is a gap and not a run of zeros.
+  //
+  // The overlapping fields are deliberately stored twice: the two links are
+  // independent, and the difference between them is the standing check that
+  // both are still decoding correctly (doc/battery_can_data_spec.md).
+  PylontechCanState can = {};
+  pylontech_can_get(&can);
+  if (pylontech_can_valid()) {
+    String line = "chajda-battery-can ";
+    bool first = true;
+    appendFloat(line, first, "ccl_a", can.ccl_a);
+    appendFloat(line, first, "dcl_a", can.dcl_a);
+    appendFloat(line, first, "charge_v", can.charge_v);
+    appendInt(line, first, "soc", can.soc);
+    appendInt(line, first, "soh", can.soh);
+    appendFloat(line, first, "voltage_v", can.voltage_v);
+    appendFloat(line, first, "current_a", can.current_a);
+    appendInt(line, first, "power_w", (long)(can.voltage_v * can.current_a));
+    appendFloat(line, first, "temp_c", can.temp_c);
+    // Range of current_a since the last point, which is what a point sample on
+    // a 10 s (and later coarser) grid throws away — a boiler step or a short
+    // discharge spike stays visible without storing every burst. Absent when no
+    // burst landed in the window, so the fields are never a stale repeat.
+    //
+    // "Since the last point" is literal: an off-grid event snapshot takes the
+    // range too, and the following grid point then covers only the time since
+    // the event. That is the intended reading — each point's range covers the
+    // gap back to the point before it, whether or not that one was on the grid.
+    float cur_lo = 0.0f, cur_hi = 0.0f;
+    if (pylontech_can_take_current_range(&cur_lo, &cur_hi)) {
+      appendFloat(line, first, "current_min_a", cur_lo);
+      appendFloat(line, first, "current_max_a", cur_hi);
+    }
+    appendInt(line, first, "protection", (long)can.protection);
+    appendInt(line, first, "alarm", (long)can.alarm);
+    appendInt(line, first, "modules", can.modules);
+    appendBool(line, first, "chg_en", can_charge_enabled(can.request_flags));
+    appendBool(line, first, "dchg_en", can_discharge_enabled(can.request_flags));
+    appendBool(line, first, "force_chg_1", can_force_charge_1(can.request_flags));
+    appendBool(line, first, "force_chg_2", can_force_charge_2(can.request_flags));
+    appendBool(line, first, "full_chg_req", can_full_charge_requested(can.request_flags));
+    appendInt(line, first, "req_raw", can.request_flags);  // undefined bits kept
+    if (!first) {
+      line += tsbuf;
+      buf += line;
+    }
+  }
+
   // chajda-boiler — relay state + boiler water temperatures (g_temp_h/g_temp_l).
   {
     String line = "chajda-boiler ";
@@ -156,6 +208,47 @@ static void append_sample(String& buf, time_t ts) {
     line += tsbuf;
     buf += line;
   }
+}
+
+// Append the CAN link-health point, written once per flush and — unlike every
+// measurement above — unconditionally. This series is what explains a gap in
+// chajda-battery-can, so it is wanted precisely when there is no data to write.
+// `elapsed_ms` is the time since the last one, for the rate.
+static void append_can_link(String& buf, time_t ts, uint32_t elapsed_ms) {
+  static uint32_t last_rx_frames = 0;
+  static bool have_last_rx = false;
+
+  PylontechCanLink lk = {};
+  pylontech_can_get_link(&lk);
+
+  // Derived from the frame counter and the real elapsed time rather than from
+  // an assumed flush interval, so it stays correct if the interval changes.
+  float rx_rate = 0.0f;
+  if (have_last_rx && elapsed_ms > 0) {
+    rx_rate = (lk.rx_frames - last_rx_frames) * 1000.0f / (float)elapsed_ms;
+  }
+  last_rx_frames = lk.rx_frames;
+  have_last_rx = true;
+
+  String line = "chajda-can-link ";
+  bool first = true;
+  appendInt(line, first, "rx_frames", (long)lk.rx_frames);
+  appendFloat(line, first, "rx_rate", rx_rate);
+  appendInt(line, first, "missed", (long)lk.rx_missed);
+  appendInt(line, first, "bus_err", (long)lk.bus_errors);
+  appendInt(line, first, "rec", lk.rx_err);
+  appendInt(line, first, "tec", lk.tx_err);
+  appendInt(line, first, "recoveries", (long)lk.recoveries);
+  // Zero by construction in this build, which transmits nothing. Kept in the
+  // series as the tripwire for 0x305 ever being re-enabled — it is the counter
+  // that exposed the retry storm in the first place.
+  appendInt(line, first, "tx_failed", (long)lk.tx_failed);
+  appendInt(line, first, "state", lk.state);
+  appendBool(line, first, "valid", pylontech_can_valid());
+  char tsbuf[16];
+  snprintf(tsbuf, sizeof(tsbuf), " %ld\n", (long)ts);
+  line += tsbuf;
+  buf += line;
 }
 
 // POST the accumulated batch in a single request. Drops the batch on any
@@ -211,8 +304,13 @@ void influx_log_event() {
 static void influx_task(void* arg) {
   (void)arg;
   String buf;
-  buf.reserve(4096);
+  // ~1 kB per sample now that chajda-battery-can is in the batch, times
+  // METRICS_SAMPLES_PER_FLUSH. Reserved up front so the batch does not grow by
+  // reallocation on a heap this module shares with the TLS-free but still
+  // allocation-heavy HTTP client.
+  buf.reserve(8192);
   int count = 0;
+  uint32_t last_link_ms = millis();
   for (;;) {
     // Drain any off-cadence events captured by other tasks and flush them
     // promptly (within one sample interval) rather than waiting for the full
@@ -233,6 +331,14 @@ static void influx_task(void* arg) {
       append_sample(buf, now);
     }
     if (++count >= METRICS_SAMPLES_PER_FLUSH) {
+      // One link-health point per flush, before the POST so it rides the same
+      // request. Needs a wall-clock time like everything else, so a flush that
+      // happens before NTP is set carries no link point either.
+      if (now > 24 * 3600) {
+        uint32_t elapsed = millis() - last_link_ms;
+        last_link_ms = millis();
+        append_can_link(buf, now, elapsed);
+      }
       flush(buf);
       buf = "";
       count = 0;

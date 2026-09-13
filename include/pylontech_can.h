@@ -5,13 +5,15 @@
 
 // ---------------------------------------------------------------------------
 // Pylontech US5000 CAN link — parsed state (stage 2 of
-// doc/battery_can_spec.md, commit 1 of doc/battery_can_data_spec.md).
+// doc/battery_can_spec.md, commits 1-2 of doc/battery_can_data_spec.md).
 //
 // Receives the BMS broadcast, decodes it against the vendor specification and
-// publishes it as a mutex-guarded snapshot. Nothing is stored and no control
-// path consumes it yet: GET /can shows the raw payload next to the decoded
-// values so the layout can be confirmed on this pack before anything depends
-// on it.
+// publishes it as a mutex-guarded snapshot. The snapshot is stored (influx.cpp
+// writes chajda-battery-can on the metrics grid, plus an off-grid point on a
+// significant change), but no control path consumes it yet — that is commit 3,
+// and it waits on a full charge/discharge cycle of stored data. GET /can still
+// shows the raw payload next to the decoded values, so byte order and scaling
+// stay verifiable after any change to the parser.
 //
 // The driver runs in TWAI_MODE_NORMAL because the ESP32 is the only other node
 // on the battery's CAN port. CAN needs an acknowledge bit from a second node;
@@ -82,7 +84,6 @@ struct PylontechCanLink {
   uint8_t tx_err;          // CAN transmit error counter (TEC), live not cumulative
   uint32_t recoveries;     // bus-off recoveries performed
   uint32_t tx_failed;      // 0x305 heartbeats that did not go out
-  uint32_t rejected;       // bursts dropped by the range check (stage 1 only)
   uint8_t state;           // twai_state_t
   uint32_t last_rx_ms;
 };
@@ -121,6 +122,16 @@ void pylontech_can_get_link(PylontechCanLink* out);
 // Thread-safe copy of the raw payload table; `out` holds CAN_RAW_SLOTS entries.
 // Unused slots have id == 0.
 void pylontech_can_get_raw(PylontechCanRaw* out);
+
+// Min/max of current_a folded over every burst since the last call, and reset
+// by it. The CAN task sees the current at ~0.5 Hz while the metrics sampler
+// reads once per grid interval, so a point sample throws the rest away; this
+// turns each stored point into a range instead. Returns false when no burst has
+// carried 0x356 since the last call, in which case *lo and *hi are untouched.
+//
+// The reset is inside the accessor on purpose: it makes read-and-clear atomic,
+// which only works while there is exactly one consumer (influx.cpp).
+bool pylontech_can_take_current_range(float* lo, float* hi);
 
 // Hold the bus dominant for two seconds, then restart the driver. Forces every
 // other node into bus-off and then hands it a clean idle bus - the only thing

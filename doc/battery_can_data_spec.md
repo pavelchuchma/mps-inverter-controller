@@ -163,6 +163,9 @@ Two things make this safe to leave as it is:
 
 ### Range check — bring-up scaffold, not a permanent gate
 
+**Removed in commit 2**, as planned below. The reasoning is kept because it is
+the argument for *not* putting one back.
+
 CAN's CRC already rejects corrupted frames, so a range check is **not** noise
 filtering. Its only job is to catch a wrong layout assumption (byte order,
 scaling) before a mis-scaled `ccl_a` can reach the boiler logic. That is a
@@ -413,8 +416,9 @@ resolution is wanted.
 
 Written **unconditionally**, once per flush cycle (currently 1/min):
 `rx_frames` (counter), `rx_rate` (frames/s since the last write), `missed`,
-`bus_err`, `recoveries`, `tx_failed`, `state` (int), `valid` (bool), and — for
-as long as the stage-1 range check exists — `rejected`.
+`bus_err`, `rec`, `tec`, `recoveries`, `tx_failed`, `state` (int) and `valid`
+(bool). The `rejected` counter this listed alongside them went with the range
+check in commit 2.
 
 `tx_failed` stays in the series even though the controller currently transmits
 nothing, so it reads zero by construction. That is deliberate: it is the

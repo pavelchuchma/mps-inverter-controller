@@ -168,6 +168,27 @@ async function fetchStatus() {
     $("pv_charging_power").textContent = valid && j.pcp !== undefined && j.pcp !== null ? String(Math.round(j.pcp)) : "—";
     $("batt_mode").textContent = battValid && j.bm !== undefined && j.bm !== null && j.bm !== "" ? j.bm : "—";
 
+    // BMS row: the limits and SoH only the CAN link carries. Greyed out rather
+    // than blanked when the link is stale, so a dead link is visibly different
+    // from a value the pack has not sent yet.
+    const canValid = !!j.cav;
+    const bmsCard = $("bms_card");
+    if (canValid && j.ccl !== undefined && j.ccl !== null) {
+      let bms = `${Number(j.ccl).toFixed(0)} A chg / ${Number(j.dcl).toFixed(0)} A dchg`;
+      if (j.soh !== undefined && j.soh !== null) bms += ` · SoH ${Math.round(j.soh)} %`;
+      // The two links measure the same current independently, so a divergence
+      // is a live corruption warning rather than one found in Grafana later.
+      if (battValid && j.bc !== undefined && j.bc !== null
+          && j.cbc !== undefined && j.cbc !== null
+          && Math.abs(Number(j.bc) - Number(j.cbc)) > 2) {
+        bms += ` · ⚠ ${Number(j.cbc).toFixed(1)} A on CAN`;
+      }
+      $("bms_v").textContent = bms;
+    } else {
+      $("bms_v").textContent = "—";
+    }
+    if (bmsCard) bmsCard.classList.toggle("stale", !canValid);
+
     // Phone tiles: battery, mobile-data traffic.
     const phoneValid = !!j.phv;
     if (!phoneValid) {
