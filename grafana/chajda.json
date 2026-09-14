@@ -157,6 +157,7 @@
         "y": 1
       },
       "id": 2,
+      "interval": "10s",
       "options": {
         "annotations": {
           "clustering": -1,
@@ -348,6 +349,7 @@
         "y": 1
       },
       "id": 3,
+      "interval": "10s",
       "options": {
         "annotations": {
           "clustering": -1,
@@ -494,6 +496,7 @@
         "y": 9
       },
       "id": 7,
+      "interval": "10s",
       "options": {
         "annotations": {
           "clustering": -1,
@@ -608,6 +611,7 @@
         "y": 9
       },
       "id": 12,
+      "interval": "10s",
       "options": {
         "annotations": {
           "clustering": -1,
@@ -734,6 +738,7 @@
         "y": 17
       },
       "id": 11,
+      "interval": "10s",
       "options": {
         "annotations": {
           "clustering": -1,
@@ -868,6 +873,7 @@
         "y": 17
       },
       "id": 5,
+      "interval": "10s",
       "options": {
         "annotations": {
           "clustering": -1,
@@ -1050,6 +1056,7 @@
         "y": 25
       },
       "id": 4,
+      "interval": "10s",
       "options": {
         "annotations": {
           "clustering": -1,
@@ -1218,6 +1225,7 @@
         "y": 25
       },
       "id": 9,
+      "interval": "10s",
       "options": {
         "annotations": {
           "clustering": -1,
@@ -1346,6 +1354,7 @@
         "y": 33
       },
       "id": 6,
+      "interval": "10s",
       "options": {
         "annotations": {
           "clustering": -1,
@@ -1460,6 +1469,7 @@
         "y": 33
       },
       "id": 8,
+      "interval": "10s",
       "options": {
         "annotations": {
           "clustering": -1,
@@ -1597,6 +1607,7 @@
         "y": 41
       },
       "id": 10,
+      "interval": "10s",
       "options": {
         "alignValue": "left",
         "annotations": {
@@ -1709,6 +1720,7 @@
         "y": 47
       },
       "id": 13,
+      "interval": "10s",
       "options": {
         "alignValue": "left",
         "annotations": {
@@ -1895,6 +1907,7 @@
         "y": 54
       },
       "id": 22,
+      "interval": "10s",
       "options": {
         "annotations": {
           "clustering": -1,
@@ -2057,6 +2070,7 @@
         "y": 54
       },
       "id": 23,
+      "interval": "2m",
       "options": {
         "annotations": {
           "clustering": -1,
@@ -2254,6 +2268,7 @@
         "y": 62
       },
       "id": 26,
+      "interval": "10s",
       "options": {
         "annotations": {
           "clustering": -1,
@@ -2571,6 +2586,7 @@
         "y": 62
       },
       "id": 27,
+      "interval": "10s",
       "options": {
         "annotations": {
           "clustering": -1,
@@ -2793,6 +2809,7 @@
         "y": 70
       },
       "id": 25,
+      "interval": "10s",
       "options": {
         "annotations": {
           "clustering": -1,
@@ -2946,6 +2963,10 @@
               {
                 "id": "displayName",
                 "value": "CAN link valid"
+              },
+              {
+                "id": "custom.spanNulls",
+                "value": 120000
               }
             ]
           }
@@ -2958,6 +2979,7 @@
         "y": 78
       },
       "id": 24,
+      "interval": "10s",
       "options": {
         "alignValue": "left",
         "annotations": {
@@ -3125,6 +3147,7 @@
         "y": 85
       },
       "id": 15,
+      "interval": "10s",
       "options": {
         "annotations": {
           "clustering": -1,
@@ -3237,6 +3260,7 @@
         "y": 85
       },
       "id": 16,
+      "interval": "10s",
       "options": {
         "annotations": {
           "clustering": -1,
@@ -3373,6 +3397,7 @@
         "y": 93
       },
       "id": 17,
+      "interval": "10s",
       "options": {
         "annotations": {
           "clustering": -1,
@@ -3490,6 +3515,7 @@
         "y": 101
       },
       "id": 18,
+      "interval": "10s",
       "options": {
         "alignValue": "left",
         "annotations": {
@@ -3562,5 +3588,5 @@
   "timezone": "browser",
   "title": "chajda",
   "uid": "chajda",
-  "version": 30
+  "version": 33
 }
