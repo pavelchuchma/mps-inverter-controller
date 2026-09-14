@@ -479,7 +479,20 @@ static void pylontech_can_task(void* arg) {
       last_status = millis();
       print_bus_status("status:");
       twai_status_info_t st;
-      if (twai_get_status_info(&st) == ESP_OK
+      bool have_status = twai_get_status_info(&st) == ESP_OK;
+      // Copy the driver-side counters out on this cadence, not on the health
+      // line's: /can reads them live, and the health line only fires every
+      // CAN_LOG_INTERVAL_MS, which would leave the endpoint up to 20 minutes
+      // stale. The status is being queried here anyway, so this is free.
+      if (have_status) {
+        link.rx_missed = st.rx_missed_count;
+        link.bus_errors = st.bus_error_count;
+        link.rx_err = (uint8_t)st.rx_error_counter;
+        link.tx_err = (uint8_t)st.tx_error_counter;
+        link.tx_failed = st.tx_failed_count + tx_enqueue_failed;
+        link.state = (uint8_t)st.state;
+      }
+      if (have_status
           && st.state == TWAI_STATE_BUS_OFF
           && millis() - last_recover_ms >= recover_interval_ms) {
         last_recover_ms = millis();
@@ -501,21 +514,12 @@ static void pylontech_can_task(void* arg) {
     if (millis() - last_log_ms >= CAN_LOG_INTERVAL_MS) {
       unsigned long elapsed = millis() - last_log_ms;
       last_log_ms = millis();
-      // Refresh the driver-side counters here, once a minute, for both the
-      // line below and /can. The driver keeps its own cumulative totals for
-      // the things it sees; the rest are ours. REC and TEC are the CAN error
-      // counters themselves, not running totals: each error adds to them and
-      // each success takes away, so they say whether the controller is
+      // The counters themselves are refreshed by the 30 s status branch above;
+      // this only turns them into deltas. The driver keeps its own cumulative
+      // totals for the things it sees; the rest are ours. REC and TEC are the
+      // CAN error counters themselves, not running totals: each error adds to
+      // them and each success takes away, so they say whether the controller is
       // currently reacting to something on the wire.
-      twai_status_info_t st;
-      if (twai_get_status_info(&st) == ESP_OK) {
-        link.rx_missed = st.rx_missed_count;
-        link.bus_errors = st.bus_error_count;
-        link.rx_err = (uint8_t)st.rx_error_counter;
-        link.tx_err = (uint8_t)st.tx_error_counter;
-        link.tx_failed = st.tx_failed_count + tx_enqueue_failed;
-        link.state = (uint8_t)st.state;
-      }
       uint32_t d_rx = link.rx_frames - last_log_rx;
       uint32_t d_err = link.bus_errors - last_log_err;
       last_log_rx = link.rx_frames;
