@@ -2,10 +2,11 @@
 id: 005
 title: Read the inverter charge configuration every 5 minutes and store it
 type: enhancement
-status: in-progress
+status: done
 priority: medium
 component: inverter
 created: 2026-09-13
+resolved: 2026-09-14
 ---
 
 # Read the inverter charge configuration every 5 minutes and store it
@@ -259,3 +260,32 @@ Pylontech pack (CAN reports CVL 52.8 V). Row `13` (SBU return) likewise expects
 50 V against an actual 48.0 V. The settings page therefore flags those rows as
 mismatches against a target that no longer applies. Real, but a separate piece of
 work; do not fold it into this one.
+
+## Resolution
+
+Closed **2026-09-14**. Implemented in `b3e8fda` and fixed in `8618994` (the
+stack overflow described above); the Grafana panels landed with the dashboard in
+`454d4f7`.
+
+The open question — "verify the parser against the raw dump once after it lands"
+— is answered. Read back from the live inverter on 2026-09-14:
+
+```
+/inv_config  220.0 25.0 220.0 50.0 23.9 5500 5500 48.0 48.0 46.0 52.5 51.5 2 02 020 0 2 1 6 01 0 0 48.0 0 1
+app.log      [INV] config: chg 20 A  bulk 52.5 V  float 51.5 V  LVD 46.0 V  SBU 48.0 V  (task stack free 3672 B)
+```
+
+All five indices (9, 10, 11, 14, 22) map to the values the firmware published,
+so the token order taken from `settings.js` is confirmed against this model.
+`inverter_task` reports 3672 B of stack headroom after the read, i.e. the
+6144 B stack is right.
+
+Not done, and deliberately not folded in here:
+
+- **Re-read `QPIRI` after `POST /inv_set`**, so a write shows up in the series
+  at its real time instead of up to 5 minutes later.
+- **Trigger on the `b6` "settings changed" status bit** instead of the blind
+  timer. Both were listed above as later work and still are; neither blocks
+  anything that exists today.
+- The `settings.js` expected values still describing the **old VRLA bank** — see
+  "Out of scope" above. Still real, still separate.

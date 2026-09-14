@@ -110,7 +110,7 @@ two RS232 links — see [`rj45_cable_wiring.md`](rj45_cable_wiring.md).
 With every non-strapping GPIO already taken, the original design put both CAN
 signals on strapping pins (GPIO12 and GPIO0). GPIO0 turned out to be a mistake
 and CAN RX now lives on GPIO4, freed by moving the `BTN_UP` touch pad to GPIO2
-(see [`todo/004`](todo/004-move-can-rx-off-gpio0.md)). Both CAN signals sit
+(see [`todo/004`](todo/_004-move-can-rx-off-gpio0.md)). Both CAN signals sit
 **high** at boot (the bus idles recessive and TJA1050's `TXD` has an internal
 pull-up), so the choice is constrained:
 
@@ -138,7 +138,7 @@ Hence:
   *closed* (DTR/RTS idle) the auto-reset transistor loads GPIO0 and corrupts
   reception (`REC` climbs, `rx = 0`). Opening any serial monitor released the
   pin and "revived" the link, which is the whole story behind
-  [`todo/002`](todo/002-can-link-freezes-under-main-firmware.md). GPIO0 is now
+  [`todo/002`](todo/_002-can-link-freezes-under-main-firmware.md). GPIO0 is now
   left to the auto-reset/download circuit alone, so remote uploads
   (`pio remote run -t upload`, no access to the BOOT button) keep working.
 - **GPIO2 holds the `BTN_UP` touch pad.** The pad is a floating conductor, so

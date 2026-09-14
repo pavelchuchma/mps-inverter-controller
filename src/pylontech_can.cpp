@@ -25,12 +25,9 @@
 // reading a day at once is the rate, not the running count. 72 lines a day at
 // ~150 B is ~10 kB, comfortably inside the 100 kB the log rotates at, and far
 // away from the per-frame writes constraint 4 of the data spec forbids.
-// TEMPORARY: 1 min instead of 20 while chasing why the link dies every 15
-// minutes or so - 20 min is too coarse to see whether a fall is preceded by the
-// frame rate sagging. At ~150 B a line this rotates the 100 kB log about twice a
-// day, keeping roughly the last 8 hours. Put it back to 20 min once the
-// question is answered.
-#define CAN_LOG_INTERVAL_MS (60UL * 1000UL)
+// One health line every 20 minutes: 72 lines a day at ~150 B is ~10 kB, well
+// inside the 100 kB log rotation (doc/battery_can_data_spec.md).
+#define CAN_LOG_INTERVAL_MS (20UL * 60UL * 1000UL)
 
 // Tier C event triggers (doc/battery_can_data_spec.md). A change worth seeing
 // at its real time rather than at the next grid point calls influx_log_event(),
@@ -46,10 +43,6 @@
 // the cost is negligible - and it goes to Serial only, never through
 // printInfo(): nothing per-frame may reach flash.
 #define CAN_TRACE_LIMITS 1
-
-// Deliberate bus reset, see pylontech_can_force_bus_reset(). Long enough that
-// any node still listening cannot mistake it for ordinary bus traffic.
-#define CAN_BUS_RESET_DOMINANT_MS 2000
 
 // --- transmit: the 0x305 inverter reply ------------------------------------
 // The sniffer's policy, adopted after it out-ran every variant of this module
@@ -556,39 +549,6 @@ static void pylontech_can_task(void* arg) {
       if (g_can_mutex) xSemaphoreGive(g_can_mutex);
     }
   }
-}
-
-// Hold the bus dominant for CAN_BUS_RESET_DOMINANT_MS, then bring the driver
-// back. This is the accidental effect of an ESP32 reboot made deliberate: from
-// reset until twai_driver_install() claims GPIO12, the 2.2 kOhm pull-down keeps
-// TJA1050's TXD low, which is dominant, and jams the bus. Every observed
-// recovery of a silent pack followed a boot with a jam of that shape; the one
-// boot with a short jam did not bring it back.
-//
-// Any other node reaches bus-off within a millisecond of this, which is exactly
-// the point: the pack is already silent, and a forced bus-off followed by a
-// clean idle bus is the only thing that has ever restarted it. Do not call this
-// while the link is healthy.
-bool pylontech_can_force_bus_reset() {
-  if (g_tx_pin < 0) return false;
-  printWarning("[CAN] forcing bus reset: dominant for %d ms",
-               CAN_BUS_RESET_DOMINANT_MS);
-
-  twai_stop();
-  twai_driver_uninstall();
-
-  // Drive TXD low by hand: low is dominant on the TJA1050.
-  pinMode((gpio_num_t)g_tx_pin, OUTPUT);
-  digitalWrite((gpio_num_t)g_tx_pin, LOW);
-  vTaskDelay(pdMS_TO_TICKS(CAN_BUS_RESET_DOMINANT_MS));
-  // Release to recessive before the driver takes over, so the bus goes idle
-  // cleanly rather than glitching through another dominant edge.
-  digitalWrite((gpio_num_t)g_tx_pin, HIGH);
-  vTaskDelay(pdMS_TO_TICKS(50));
-
-  bool ok = driver_start();
-  printInfo("[CAN] bus reset done, driver %s", ok ? "restarted" : "FAILED to restart");
-  return ok;
 }
 
 void pylontech_can_init(int tx_pin, int rx_pin) {

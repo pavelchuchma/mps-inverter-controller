@@ -34,16 +34,13 @@ static inline void formatLogTimestamp(char* buf, size_t cap) {
 // LOG_DROP_BYTES (rounded up to the next newline so the surviving log starts
 // on a clean line). With a typical ~2 KB/h rate this fires once every few
 // weeks. The copy uses a small stack buffer to avoid large heap allocations.
-// TEMPORARY: raised from 100/50 kB while the CAN link is under diagnosis, so a
-// couple of days of once-a-minute health lines survive to be read back.
 //
 // The ceiling is set by rotation, not by the partition: the surviving tail is
 // copied to a second file before the swap, so peak usage is
-// LOG_MAX + (LOG_MAX - LOG_DROP) = 1152 kB, against a 1408 kB LittleFS
-// partition holding ~31 kB of web files. A round 1 MB cap would peak at
-// 1536 kB and overflow. Put both back to 100/50 kB when the diagnosis is done.
-static const size_t LOG_MAX_BYTES  = 768UL * 1024UL;
-static const size_t LOG_DROP_BYTES = 384UL * 1024UL;
+// LOG_MAX + (LOG_MAX - LOG_DROP) = 150 kB, against a 1408 kB LittleFS
+// partition holding ~31 kB of web files.
+static const size_t LOG_MAX_BYTES  = 100UL * 1024UL;
+static const size_t LOG_DROP_BYTES = 50UL * 1024UL;
 
 static void rotateAppLog() {
   File src = LittleFS.open("/app.log", "r");

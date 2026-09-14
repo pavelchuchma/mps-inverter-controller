@@ -132,9 +132,3 @@ void pylontech_can_get_raw(PylontechCanRaw* out);
 // The reset is inside the accessor on purpose: it makes read-and-clear atomic,
 // which only works while there is exactly one consumer (influx.cpp).
 bool pylontech_can_take_current_range(float* lo, float* hi);
-
-// Hold the bus dominant for two seconds, then restart the driver. Forces every
-// other node into bus-off and then hands it a clean idle bus - the only thing
-// that has so far restarted a pack that has stopped broadcasting. Blocks for
-// about two seconds. Only for a link that is already dead.
-bool pylontech_can_force_bus_reset();

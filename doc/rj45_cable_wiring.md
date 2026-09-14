@@ -139,7 +139,7 @@ The ESP side of the cable measured the expected 120 Ω.
 The bus has therefore been running 500 kbit/s over 15 m with termination at
 one end only. That is the leading explanation for both the permanent
 ~1/min background bus errors and the error-storm collapses of
-[`todo/002`](todo/002-can-link-freezes-under-main-firmware.md): reflections
+[`todo/002`](todo/_002-can-link-freezes-under-main-firmware.md): reflections
 from the open end corrupt the pack's own transmissions, its TEC climbs, and
 its CAN controller eventually latches off. **Fix: a 120 Ω resistor across
 pins 4–5 at the battery end of the cable.** Verification after fitting it:

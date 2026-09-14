@@ -17,8 +17,6 @@
 //     is deliberately longer, so polling can never resume underneath a live
 //     session and start injecting 'pwr' into it.
 //
-// Debug/test tool only — do not use it at the same time as the web UI's
-// serial_links mute, both drive the same pause flag.
-// A session shows up in GET /status as `slp` (serial links paused), same as the
-// web UI mute, and in app.log as the [TELNET] session open/close lines.
+// A session shows up in GET /status as `slp` (console link paused) and in
+// app.log as the [TELNET] session open/close lines.
 void battery_telnet_init();

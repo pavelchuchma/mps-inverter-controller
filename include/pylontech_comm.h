@@ -77,10 +77,8 @@ bool pylontech_get_status(PylontechState* out);
 // Thread-safe read of the battery data validity flag.
 bool pylontech_data_valid();
 
-// Temporarily silence this link's RS232 traffic. This is the louder of the two
-// links on the shared 15 m cable - 115200 baud at RS232 levels right next to
-// the CAN pair - and doc/rj45_cable_wiring.md names it the first suspect if CAN
-// error counters climb. Muting it is how that gets tested remotely.
+// Temporarily silence this link's RS232 traffic, so the telnet console bridge
+// (battery_telnet.cpp) can have Serial2 to itself for the length of a session.
 //
 // Pausing clears the validity flag, so relay.cpp forces the boiler off rather
 // than regulating on a frozen snapshot. `max_ms` is an auto-resume deadline, so

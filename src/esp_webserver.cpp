@@ -17,10 +17,6 @@ extern WebServer server;
 
 static bool pendingRestart = false;
 
-// Both serial links come back on their own after this long. Nobody can reach
-// the hardware, so a mute must never be able to outlive the session that set it.
-#define SERIAL_PAUSE_MAX_MS (30UL * 60UL * 1000UL)
-
 void initWebServer() {
   if (!LittleFS.begin()) {
     Serial.println("LittleFS mount failed");
@@ -137,7 +133,7 @@ static String makeStatusJson() {
   doc["cbv"] = can.voltage_v;
   doc["cbc"] = can.current_a;   // signed, same convention as bc
 
-  doc["slp"] = inverter_comm_paused() || pylontech_comm_paused();  // serial links paused
+  doc["slp"] = pylontech_comm_paused();  // console link paused (telnet client connected)
 
   doc["rr"]  = (int)g_reset_reason_ws;
   doc["rrs"] = g_reset_reason_str_ws;
@@ -188,39 +184,6 @@ static String handleCommand(JsonDocument& doc) {
     char msg[32];
     snprintf(msg, sizeof(msg), "Boiler %s", labels[val]);
     return makeAckJson(msg);
-  }
-
-  // Mute both RS232 links so the shared 15 m cable carries nothing but CAN.
-  // The console link at 115200 baud sits on the pair next to CAN-H/CAN-L and is
-  // the documented first suspect for the CAN bus errors; with the pack in
-  // bus-off, a genuinely quiet bus is also what it needs to recover, since
-  // recovery requires 128 idle bit sequences in a row.
-  //
-  // Both links fail the boiler off while muted (relay.cpp forces it off on
-  // invalid data), and both auto-resume after SERIAL_PAUSE_MAX_MS so a lost
-  // connection cannot leave the site without regulation.
-  if (strcmp(name, "serial_links") == 0) {
-    bool on = doc["value"].as<int>() != 0;
-    inverter_comm_set_paused(!on, SERIAL_PAUSE_MAX_MS);
-    pylontech_comm_set_paused(!on, SERIAL_PAUSE_MAX_MS);
-    printInfo("[CMD] serial links %s%s", on ? "resumed" : "paused",
-              on ? "" : " (CAN crosstalk test; auto-resume in 30 min)");
-    return makeAckJson(on ? "Serial links resumed"
-                         : "Serial links paused, auto-resume in 30 min");
-  }
-
-  // Force the CAN bus dominant for two seconds, then restart the driver. Every
-  // observed recovery of a silent pack followed an ESP32 boot, whose GPIO12
-  // pull-down jams the bus the same way; this is that effect made deliberate,
-  // without restarting the whole controller. Blocks ~2 s.
-  if (strcmp(name, "can_bus_reset") == 0) {
-    if (pylontech_can_valid()) {
-      return makeErrJson("link_healthy",
-                         "CAN link is up; a bus reset would knock the pack off it");
-    }
-    bool ok = pylontech_can_force_bus_reset();
-    return ok ? makeAckJson("CAN bus reset done")
-              : makeErrJson("io_error", "CAN driver failed to restart");
   }
 
   if (strcmp(name, "clear_log") == 0) {

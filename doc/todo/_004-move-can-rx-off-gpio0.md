@@ -2,10 +2,11 @@
 id: 004
 title: Move CAN RX off GPIO0 (shared with the serial auto-reset circuit)
 type: task
-status: in-progress
+status: done
 priority: high
 component: battery-can
 created: 2026-09-13
+resolved: 2026-09-14
 ---
 
 # Move CAN RX off GPIO0 (shared with the serial auto-reset circuit)
@@ -18,7 +19,7 @@ CP2102 on the debug pizero is **plugged in but its port is closed**, the
 transistor loads GPIO0 and corrupts CAN reception. Opening the port (any
 monitor, or just asserting DTR/RTS) releases GPIO0 and CAN runs cleanly.
 
-This single fact is the real cause behind the whole of [`002`](002-can-link-freezes-under-main-firmware.md):
+This single fact is the real cause behind the whole of [`002`](_002-can-link-freezes-under-main-firmware.md):
 the "link freezes, a monitor connect revives it" mystery was never about
 firmware, bus-off, termination, grounding or the battery — it was GPIO0 being
 pulled by the auto-reset transistor.
@@ -146,15 +147,41 @@ paragraph is kept as the record of the state it was written in.*
 > the trade-off is that CAN is down while the pizero is idle with no monitor.
 
 What is left is the 24 h soak on the full 15 m cable. Closing this also closes
-[`002`](002-can-link-freezes-under-main-firmware.md) and releases
-[`003`](003-remove-debug-cmds-serial-links-can-bus-reset.md), plus reverting
+[`002`](_002-can-link-freezes-under-main-firmware.md) and releases
+[`003`](_003-remove-debug-cmds-serial-links-can-bus-reset.md), plus reverting
 `002`'s temporary settings: the `[CAN]` health line back to 20 min
 (`CAN_LOG_INTERVAL_MS`) and the `app.log` cap back to 100 kB
 (`utils.cpp:45`).
 
 ## Related
 
-- [`002`](002-can-link-freezes-under-main-firmware.md) — the freeze
+- [`002`](_002-can-link-freezes-under-main-firmware.md) — the freeze
   investigation this explains and closes out.
 - [`../battery_can_spec.md`](../battery_can_spec.md) — pin assignment
   rationale to update.
+
+## Resolution
+
+Closed **2026-09-14** with the last checklist item satisfied and the 24 h soak
+deliberately not waited out.
+
+At close the link had run 13 h since the reinstall at the inverter (2026-09-13
+19:20:40), through the evening end-of-charge and overnight — the window that had
+killed every earlier run. 523 per-minute health lines after the midnight reboot,
+`rx` 174–186/min on every one of them, not a single `rx +0`, `REC 0`, `TEC 0`,
+`missed 6`, `recov 0`, `tx_fail 0`. Decoded values plausible throughout.
+
+**`bus_err` runs at ~3/min and is accepted as normal for this installation**
+(1486 in 8.7 h at close). This is the judgement that let the issue close early:
+CAN here is a 15 m *unshielded* cable sharing a bundle with two RS232 links and
+power wiring, so a few isolated bit/stuff errors a minute is what that
+environment costs. What matters is that the controller absorbs them — the error
+counters never build, no recovery is ever triggered, and the frame rate does not
+dip. This is a different phenomenon from the GPIO0 failure, whose signature was
+`rx 0` with `REC 85`. Not worth further work unless the rate climbs by an order
+of magnitude or starts costing frames.
+
+Closing this also closed [`002`](_002-can-link-freezes-under-main-firmware.md)
+and released [`003`](_003-remove-debug-cmds-serial-links-can-bus-reset.md), and
+`002`'s two temporary constants went back to their normal values in the same
+commit.

@@ -289,25 +289,6 @@ When the link is down the decoded half is replaced by the age of the last frame,
 because publishing stale values next to a dead link is the same mistake `/can`
 made by printing zeros.
 
-**A runtime mute for both serial links** — `{"name":"serial_links","value":0|1}`
-on `/cmd`, state visible as `slp` in `/status`. Both RS232 links share the 15 m
-cable with the CAN pair, and
-[`rj45_cable_wiring.md`](rj45_cable_wiring.md) named that crosstalk the first
-suspect for CAN bus errors; this is how that got tested without a site visit.
-It was exonerated, but the switch stays for the next question of that shape.
-
-Two details make it safe to leave in a system nobody can reach:
-
-- **Pausing clears the validity flags**, so `relay.cpp` forces the boiler off
-  rather than regulating on a snapshot that has stopped advancing. Merely
-  skipping the polling would have left the flags true and the boiler running on
-  frozen data.
-- **Both links auto-resume after 30 minutes.** A mute must not be able to
-  outlive the session that set it — if the connection drops mid-test, the site
-  comes back on its own. `inverter_query_raw()` also refuses while paused, so a
-  browser hitting the settings page cannot put RS232 back on the cable and
-  spoil a measurement.
-
 ## Storage tiers
 
 Four tiers, from "never stored" to "stored forever":

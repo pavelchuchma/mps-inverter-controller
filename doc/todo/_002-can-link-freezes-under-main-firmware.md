@@ -2,15 +2,16 @@
 id: 002
 title: CAN link freezes under the main firmware but not under the bring-up sniffer
 type: bug
-status: in-progress
+status: done
 priority: high
 component: battery-can
 created: 2026-08-31
+resolved: 2026-09-14
 ---
 
 # CAN link freezes under the main firmware but not under the bring-up sniffer
 
-> **Root cause found 2026-09-13 — see [`004`](004-move-can-rx-off-gpio0.md).**
+> **Root cause found 2026-09-13 — see [`004`](_004-move-can-rx-off-gpio0.md).**
 > `TWAI_RX = GPIO0`, which is also driven by the serial auto-reset circuit. The
 > debug pizero's CP2102, plugged in with its port closed, pulls GPIO0 through
 > the reset transistor and corrupts CAN reception; opening the port (any
@@ -287,3 +288,25 @@ variable is still unknown.
   crosstalk test that exonerated it. Termination at the battery end (DIP2, and
   a measurement across RJ45 pins 4↔5) remains unverified, but is now a weak
   suspect: the bus carries 180 frames/min with zero receive errors.
+
+## Resolution
+
+Closed **2026-09-14** as fixed by [`004`](_004-move-can-rx-off-gpio0.md). The
+freezes were `TWAI_RX = GPIO0` being loaded by the serial auto-reset transistor
+of the debug pizero's CP2102 whenever its port was plugged in but closed; moving
+CAN RX to GPIO4 (`2603518`) ended them. Nothing in this file's long list of
+suspects — termination, the 15 m cable, bus-off recovery, the 1 Hz 0x305 reply,
+the pack itself — was ever the cause, though the zero-transmit policy and the
+sniffer-shaped receive loop that came out of the hunt were kept as genuine
+improvements.
+
+Evidence at close: the link had run since the reinstall at the inverter on
+2026-09-13 19:20 with a rate of 174–186 frames/min on every single per-minute
+health line, `REC 0`, `TEC 0`, `missed 6`, `recov 0` — across the evening
+end-of-charge and overnight, the window in which every historical failure had
+occurred.
+
+The two temporary settings this investigation introduced are back to their
+normal values in the same commit that closes this: the `[CAN]` health line to 20
+minutes (`pylontech_can.cpp:30`) and the `app.log` cap to 100/50 kB
+(`utils.cpp:42`).

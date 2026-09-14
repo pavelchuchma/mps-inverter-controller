@@ -29,7 +29,7 @@ a field renamed there breaks a panel here, and the two should move together.
 
 See [`../doc/battery_can_data_spec.md`](../doc/battery_can_data_spec.md) for the
 storage tiers behind the CAN measurements, and
-[`../doc/todo/005-store-inverter-charge-config.md`](../doc/todo/005-store-inverter-charge-config.md)
+[`../doc/todo/_005-store-inverter-charge-config.md`](../doc/todo/_005-store-inverter-charge-config.md)
 for the configuration series.
 
 ## Export and import

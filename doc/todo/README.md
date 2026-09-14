@@ -9,6 +9,13 @@ Each issue is one Markdown file.
 `NNN` is a zero-padded sequence number; take the next free one. The number
 never changes, even if the title is later reworded.
 
+**A closed issue is renamed with a leading underscore**: `_NNN-…md`, e.g.
+`_004-move-can-rx-off-gpio0.md`. `_` sorts after the digits, so every listing of
+this folder puts the open items first and the closed ones below them, without
+anything having to read the frontmatter. Rename with `git mv` when setting
+`status: done` or `wontfix`, and fix the links that point at the file — other
+docs link to these by filename.
+
 ## File structure
 
 Each issue file starts with a YAML frontmatter block:
@@ -44,4 +51,5 @@ followed by these sections (omit those that do not apply):
 - English only (same as the rest of the repo).
 - Never paste anything from `include/credentials.h` — no tokens, keys or
   passwords. WireGuard addresses used elsewhere in the repo docs are fine.
-- Closed issues stay in this folder with `status: done`; do not delete them.
+- Closed issues stay in this folder with `status: done` and the `_` prefix; do
+  not delete them.

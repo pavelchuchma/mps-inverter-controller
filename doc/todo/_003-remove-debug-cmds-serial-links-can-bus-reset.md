@@ -2,10 +2,11 @@
 id: 003
 title: Remove the debug-only /cmd commands serial_links and can_bus_reset
 type: task
-status: open
+status: done
 priority: low
 component: battery-can
 created: 2026-09-01
+resolved: 2026-09-14
 ---
 
 # Remove the debug-only `/cmd` commands `serial_links` and `can_bus_reset`
@@ -13,9 +14,9 @@ created: 2026-09-01
 ## Summary
 
 Both commands were built during the CAN freeze investigation
-([`002`](002-can-link-freezes-under-main-firmware.md)) and neither has a
+([`002`](_002-can-link-freezes-under-main-firmware.md)) and neither has a
 purpose now that the root cause is known and fixed
-([`004`](004-move-can-rx-off-gpio0.md)):
+([`004`](_004-move-can-rx-off-gpio0.md)):
 
 - **`serial_links`** mutes both RS232 links for up to 30 min to test whether
   crosstalk on the shared 15 m cable was corrupting CAN. It was not — the mute
@@ -85,3 +86,31 @@ Waiting for the 24 h soak of `004` on the full cable. If the link were to
 fail again, `can_bus_reset` would be the one remote lever left (with its
 panic, it still delivers the jam), so it stays until the soak is over. Then
 both go in one commit together with closing `002` and `004`.
+
+## Resolution
+
+Closed **2026-09-14**, both commands removed once [`004`](_004-move-can-rx-off-gpio0.md)
+was closed and the emergency lever they represented was no longer needed.
+
+Removed:
+
+- `esp_webserver.cpp` — the `serial_links` and `can_bus_reset` branches of
+  `handleCommand()` and `SERIAL_PAUSE_MAX_MS`.
+- `pylontech_can.cpp` / `.h` — `pylontech_can_force_bus_reset()` and
+  `CAN_BUS_RESET_DOMINANT_MS`.
+- `inverter_comm.cpp` / `.h` — the whole pause path, not just the setter:
+  `inverter_comm_set_paused()`, `inverter_comm_paused()`, `g_inv_paused`, the
+  task's pause branch and the `inverter_query_raw()` guard. With the only caller
+  gone the flag could never become true again, so leaving it would have left a
+  dead branch in the poll loop.
+- `doc/battery_can_data_spec.md` — the section documenting the mute as a
+  feature. The mention in `rj45_cable_wiring.md` stays: there it is the record
+  of a test that was run, not a description of something that exists.
+
+`pylontech_comm_set_paused()` was **kept** — `battery_telnet.cpp` pauses the
+console poller with it for the length of a telnet session. Its header comment
+and `battery_telnet.h` no longer mention the `serial_links` mute, and `/status`
+`slp` now reports that one link rather than the union of two.
+
+The `can_bus_reset` panic documented above was never fixed: the command is gone
+instead, which is what this issue proposed.
