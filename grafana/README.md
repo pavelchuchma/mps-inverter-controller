@@ -62,6 +62,24 @@ Keys are sorted and the indent fixed on export. Grafana does not keep key order
 stable across saves, so without that every re-export would diff as the whole
 file and the history would be useless.
 
+## Older versions
+
+There is no need to keep dated copies of this file: Grafana stores every save in
+its own database, with the `message` each push carried.
+
+```sh
+curl -s -u "$GFA" \
+  "http://10.200.0.150:3000/api/dashboards/uid/chajda/versions?limit=40"
+curl -s -u "$GFA" \
+  http://10.200.0.150:3000/api/dashboards/uid/chajda/versions/<version>
+```
+
+The same list is in the UI under dashboard settings → Versions, which also
+diffs two versions and restores one. That history lives in the `grafana-data`
+docker volume, which `backup.sh` in the stack repo rsyncs to the external HDD,
+so it survives the Pi. This checked-in copy is the one that survives the *Pi
+being rebuilt from scratch* — that is what it is for, not day-to-day undo.
+
 `overwrite: true` above is for a deliberate restore. When applying an edit,
 prefer keeping the `version` field from the export and sending `overwrite:
 false`: the write is then refused if somebody changed the dashboard in the UI in
