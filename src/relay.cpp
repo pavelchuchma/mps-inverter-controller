@@ -1,4 +1,5 @@
 #include "relay.h"
+#include <Preferences.h>
 #include "inverter_comm.h"
 #include "pylontech_comm.h"
 #include "influx.h"
@@ -18,6 +19,10 @@ static constexpr uint8_t STATE_BITS[4] = {
 
 static constexpr uint16_t RELAY_SETTLE_MS = 30;  // spec ≥ 30 ms
 static constexpr uint16_t RELAY_B_VERIFY_TIMEOUT_MS = 1000;  // opto + RC filter can be slow
+
+// NVS home of the persisted mode flag (see setBoilerManual()). One bool only.
+static const char* const NVS_NAMESPACE = "boiler";
+static const char* const NVS_KEY_MANUAL = "manual";
 
 // The boiler heats primarily from PV surplus. Discharge is read directly from the
 // battery (Pylontech signed current, + charge / - discharge). Current below the
@@ -174,6 +179,11 @@ static uint32_t pvBelowSinceMs = 0;  // when PV first dropped below 300 V (0 = a
 static volatile bool boilerFault = false;
 static const char* boilerFaultReason = nullptr;  // static-string only
 
+// Manual mode: hold the commanded target, skip autoRegulate(). Loaded from NVS in
+// boilerRelayInit(), written by setBoilerManual(). volatile like currentPower —
+// read from other tasks (status JSON, InfluxDB sampler).
+static volatile bool boilerManual = false;
+
 static inline bool isCommandedRelayBHigh(BoilerPower p) {
   return STATE_BITS[p] & 0b010;
 }
@@ -222,6 +232,16 @@ void boilerRelayInit() {
   // keeps "now - lastDischargeStepDownMs >= BOILER_REPROBE_MS" true from tick one).
   lastDischargeStepDownMs = millis() - BOILER_REPROBE_MS;
   waitingForRelayBVerify = false;
+
+  // Restore the mode, never the power: a restart of unknown cause (midnight
+  // reboot, panic, WiFi watchdog) must not re-engage a load by itself. Read-only
+  // begin() fails while the namespace does not exist yet (first boot after a
+  // flash); getBool() then falls back to the default, i.e. Auto.
+  Preferences prefs;
+  prefs.begin(NVS_NAMESPACE, true);
+  boilerManual = prefs.getBool(NVS_KEY_MANUAL, false);
+  prefs.end();
+  if (boilerManual) printInfo("Boiler mode Manual restored from NVS, target OFF");
 }
 
 // Set the commanded power target, logging the change (with reason) to the app
@@ -239,7 +259,56 @@ static void setBoilerTarget(BoilerPower target, const char* reason) {
 
 void setBoilerPower(BoilerPower target) {
   if (boilerFault) return;
-  setBoilerTarget(target, "Web UI");
+  setBoilerTarget(target, boilerManual ? "Web UI, manual" : "Web UI");
+}
+
+void setBoilerManual(bool on) {
+  if (on == boilerManual) return;
+  printInfo("Boiler mode %s -> %s (Web UI), target %s", boilerManual ? "Manual" : "Auto",
+            on ? "Manual" : "Auto", POWER_LABELS[targetPower]);
+  // Snapshot the state around the switch, like a target change.
+  influx_log_event();
+  boilerManual = on;
+  // The auto trackers were frozen while Manual held the target. Restart them so
+  // the first Auto tick does not act on timing accumulated before the switch:
+  // the discharge rule waits its full BOILER_DISCHARGE_OFF_MS again and the
+  // step-up paths their full interval.
+  battDischarging = false;
+  lastPowerChangeMs = millis();
+
+  Preferences prefs;
+  if (prefs.begin(NVS_NAMESPACE, false)) {
+    prefs.putBool(NVS_KEY_MANUAL, on);
+    prefs.end();
+  } else {
+    printWarning("Boiler mode: NVS open failed, mode not persisted");
+  }
+}
+
+bool isBoilerManual() {
+  return boilerManual;
+}
+
+// Rule 1 tracker: AC output overload must persist BOILER_OVERLOAD_OFF_MS before
+// it counts. Shared by autoRegulate() and manualHold() — the overload guard is
+// about the inverter, not the battery, so it applies in both modes.
+static bool updateOverload(const InverterState& s, uint32_t now) {
+  bool overload = s.ac_active_w > BOILER_OVERLOAD_W;
+  if (overload && !overloading) {
+    overloading = true;
+    overloadStartMs = now;
+  } else if (!overload) {
+    overloading = false;
+  }
+  return overloading && (now - overloadStartMs >= BOILER_OVERLOAD_OFF_MS);
+}
+
+// Manual mode counterpart of autoRegulate(): keep the commanded target, act only
+// on a sustained AC overload. The force-offs run before this in tickBoiler().
+static void manualHold(uint32_t now) {
+  InverterState s;
+  inverter_get_status(&s);
+  if (updateOverload(s, now)) setBoilerTarget(BOILER_OFF, "AC overload");
 }
 
 // Automatic power regulation from inverter state. Only called while the inverter
@@ -287,15 +356,7 @@ static void autoRegulate(uint32_t now) {
                        (now - pvCrossed300Ms >= BOILER_MORNING_DELAY_MS);
 
   // Rule 1: sustained AC output overload -> force OFF.
-  bool overload = s.ac_active_w > BOILER_OVERLOAD_W;
-  if (overload && !overloading) {
-    overloading = true;
-    overloadStartMs = now;
-  } else if (!overload) {
-    overloading = false;
-  }
-  bool sustainedOverload = overloading &&
-                           (now - overloadStartMs >= BOILER_OVERLOAD_OFF_MS);
+  bool sustainedOverload = updateOverload(s, now);
 
   // Rule 2: sustained battery discharge -> step down one level. A brief spike
   // must not trip it, so require BOILER_DISCHARGE_OFF_MS of continuous discharge.
@@ -437,9 +498,11 @@ void tickBoiler() {
     return;
   } else {
     // Normal operation: B verified (or not commanded ON) — clear the mismatch
-    // debounce and adjust the target from inverter state.
+    // debounce and adjust the target from inverter state. Manual holds the
+    // commanded target instead; the force-offs above apply in both modes.
     relayBMismatchSinceMs = 0;
-    autoRegulate(now);
+    if (boilerManual) manualHold(now);
+    else autoRegulate(now);
   }
 
   if (now - lastStepMs < RELAY_SETTLE_MS) return;

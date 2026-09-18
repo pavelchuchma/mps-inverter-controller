@@ -96,6 +96,7 @@ static String makeStatusJson() {
 
   doc["co"]  = isMobileChargerOn();
   doc["bp"]  = (int)getBoilerPower();
+  doc["bman"] = isBoilerManual();   // boiler mode: true = Manual, false = Auto
   doc["bo"]  = isBoilerOn();
   doc["bf"]  = isBoilerFault();
   doc["bfr"] = getBoilerFaultReason() ? getBoilerFaultReason() : "";
@@ -184,6 +185,13 @@ static String handleCommand(JsonDocument& doc) {
     char msg[32];
     snprintf(msg, sizeof(msg), "Boiler %s", labels[val]);
     return makeAckJson(msg);
+  }
+
+  if (strcmp(name, "set_boiler_manual") == 0) {
+    bool on = doc["value"].as<int>() != 0;
+    setBoilerManual(on);
+    Serial.printf("[CMD] set_boiler_manual: %s\n", on ? "Manual" : "Auto");
+    return makeAckJson(on ? "Boiler mode Manual" : "Boiler mode Auto");
   }
 
   if (strcmp(name, "clear_log") == 0) {

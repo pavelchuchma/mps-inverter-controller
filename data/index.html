@@ -27,7 +27,7 @@
     <div class="card"><div class="k">Heatsink temp</div><div class="v"><span id="heatsink_temp">—</span> °C</div></div>
     <div class="sep"></div>
     <div class="card"><div class="k">Teplota (H/L)</div><div class="v"><span id="tempH">—</span>/<span id="tempL">—</span> °C</div></div>
-    <div class="card"><div class="k">Boiler</div><div class="v"><span id="boiler_status">—</span></div><div class="btn-group" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;"><button class="boiler-btn" onclick="setBoiler(0)">OFF</button><button class="boiler-btn" onclick="setBoiler(1)">500W</button><button class="boiler-btn" onclick="setBoiler(2)">1000W</button><button class="boiler-btn" onclick="setBoiler(3)">2000W</button></div></div>
+    <div class="card"><div class="k">Boiler</div><div class="v"><span id="boiler_status">—</span></div><div class="btn-group" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;"><button class="boiler-btn" onclick="setBoiler(0)">OFF</button><button class="boiler-btn" onclick="setBoiler(1)">500W</button><button class="boiler-btn" onclick="setBoiler(2)">1000W</button><button class="boiler-btn" onclick="setBoiler(3)">2000W</button><button id="boiler_mode_btn" class="mode-btn" onclick="toggleBoilerManual()" title="Manual holds the selected power; Auto regulates it from PV surplus and battery discharge">Auto</button></div></div>
     <div class="card"><div class="k">Boiler input</div><div class="v"><span id="boiler_on">—</span></div></div>
     <div class="sep"></div>
     <div class="card" id="phone_battery_card"><div class="k">Mobile Battery</div><div class="v multiline"><span id="phone_battery_v">—</span><span class="stale-suffix" id="phone_battery_stale"></span></div></div>

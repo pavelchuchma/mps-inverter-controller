@@ -435,7 +435,8 @@ static void task_update_boiler() {
     snprintf(buf, sizeof(buf), "Boiler: ERROR");
   } else {
     static const char* labels[] = {"OFF", "500W", "1000W", "2000W"};
-    snprintf(buf, sizeof(buf), "Boiler: %s", labels[getBoilerPower()]);
+    snprintf(buf, sizeof(buf), "Boiler: %s%s", labels[getBoilerPower()],
+             isBoilerManual() ? " M" : "");
   }
   display_set_row(ROW_BOILER, buf);
   display_redraw();

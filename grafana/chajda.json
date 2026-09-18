@@ -1710,6 +1710,18 @@
                 "value": "Boiler fault"
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Boiler manual"
+              }
+            ]
           }
         ]
       },
@@ -1758,9 +1770,17 @@
           },
           "query": "from(bucket: \"metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"chajda-boiler\")\n  |> filter(fn: (r) => r[\"_field\"] == \"fault\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: true)",
           "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "P951FEA4DE68E13C5"
+          },
+          "query": "from(bucket: \"metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"chajda-boiler\")\n  |> filter(fn: (r) => r[\"_field\"] == \"manual\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: true)",
+          "refId": "C"
         }
       ],
-      "title": "Boiler input / fault",
+      "title": "Boiler input / fault / manual",
       "type": "state-timeline"
     },
     {

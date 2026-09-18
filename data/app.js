@@ -66,6 +66,7 @@ let resetReasonLogged = false;
 let boilerPower = 0;
 let boilerFault = false;
 let boilerInputOn = true; // start enabled; updated from j.bo on first /status
+let boilerManual = false; // updated from j.bman on each /status
 const boilerLabels = ["OFF", "500W", "1000W", "2000W"];
 
 // Temperature: integer display with hysteresis — a new value is committed only
@@ -111,6 +112,15 @@ async function restartDevice() {
 
 async function setBoiler(level) {
   await send({ type: "cmd", name: "set_boiler", value: level });
+  await fetchStatus();
+}
+
+// Toggle Manual/Auto. Not gated on the boiler input like the power buttons:
+// Manual + OFF must be selectable while the thermostat is open.
+async function toggleBoilerManual() {
+  const on = !boilerManual;
+  if (on && !confirm("Switch boiler to Manual? The selected power is held until you change it — no automatic regulation. It ends only via the thermostat, an empty battery, or switching back to Auto.")) return;
+  await send({ type: "cmd", name: "set_boiler_manual", value: on ? 1 : 0 });
   await fetchStatus();
 }
 
@@ -224,6 +234,13 @@ async function fetchStatus() {
       boilerInputOn = !!j.bo;
       $("boiler_on").textContent = boilerInputOn ? "ON" : "OFF";
       $("boiler_on").style.color = boilerInputOn ? "#22c55e" : "#ef4444";
+    }
+
+    if (j.bman !== undefined) {
+      boilerManual = !!j.bman;
+      const modeBtn = $("boiler_mode_btn");
+      modeBtn.textContent = boilerManual ? "Manual" : "Auto";
+      modeBtn.classList.toggle("manual", boilerManual);
     }
 
     const newFault = !!j.bf;

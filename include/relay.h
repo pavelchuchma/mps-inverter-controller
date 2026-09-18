@@ -29,6 +29,15 @@
 // rank per tick, no faster than RELAY_SETTLE_MS apart. getBoilerPower()
 // returns the actually-achieved state (used by the inverter control).
 //
+// Mode: in Auto (default) tickBoiler() lets autoRegulate() move the target
+// from PV surplus / battery discharge. In Manual the commanded target is held
+// as it is — no step-ups, no step-downs — and only the hardware safety paths
+// act: the force-offs (boiler input, invalid inverter/battery data), the AC
+// overload guard and the Relay B verifier. A force-off overwrites the target
+// with OFF but leaves the mode alone, so nothing restarts by itself when the
+// input returns. The mode (never the power) is persisted in NVS and restored
+// at boot; see doc/todo/006-boiler-manual-mode.md.
+//
 // Physical B verification: an opto-isolated AC voltage detector wired
 // across B's NO contact (between node Y and N) reports whether B has
 // physically energized. tickBoiler() consults it on every settled tick
@@ -89,6 +98,10 @@ void boilerRelayInit();
 void setBoilerPower(BoilerPower power);
 void tickBoiler();
 BoilerPower getBoilerPower();
+
+// Manual / Auto mode (see the header comment). Persisted in NVS on change.
+void setBoilerManual(bool on);
+bool isBoilerManual();
 
 // Sticky fault state. Set by emergencyShutdown() when relay B's commanded
 // state disagrees with the verifier sensor. Cleared only by reboot.
