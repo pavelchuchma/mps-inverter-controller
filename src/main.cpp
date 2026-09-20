@@ -16,6 +16,7 @@
 #include "phone_charger.h"
 #include "influx.h"
 #include "relay.h"
+#include "soc_guard.h"
 #include "utils.h"
 #include <esp_system.h>
 #include <esp_heap_caps.h>
@@ -239,6 +240,10 @@ void setup() {
   // Start metrics upload to InfluxDB (background task, samples every 10s,
   // flushes one batched POST per minute)
   influx_init();
+
+  // SoC guard: reads its switch from NVS; the first decision waits for the
+  // first QPIRI read (INVERTER_CONFIG_FIRST_DELAY_MS) inside soc_guard_tick().
+  soc_guard_init();
 }
 
 
@@ -387,7 +392,11 @@ static void refresh_inverter_status() {
     display_set_row(ROW_SOC, "SoC: --");
     display_set_row(ROW_BATT_POWER, "Bat: --");
   } else {
-    snprintf(buf, sizeof(buf), "SoC: %d%%", bat.soc);
+    // " G" while the SoC guard holds the cut-off at 48 V.
+    SocGuardState sg = {};
+    soc_guard_get(&sg);
+    snprintf(buf, sizeof(buf), "SoC: %d%%%s", bat.soc,
+             (sg.enabled && sg.armed) ? " G" : "");
     display_set_row(ROW_SOC, buf);
 
     // current is signed: + charge / - discharge.
@@ -512,6 +521,7 @@ static Task tasks[] = {
   { 1000u,     0u, &task_update_temperature },
   { 1000u,     0u, &task_update_boiler },
   { 1000u,     0u, &checkDisplayBacklightTimeout },
+  { 1000u,     0u, &soc_guard_tick },
   { 10000u,    0u, &tickPhoneCharger },
   { 30000u,    0u, &task_midnight_reboot },
   { 30000u,    0u, &task_wifi_health },

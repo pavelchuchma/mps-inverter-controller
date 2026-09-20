@@ -9,6 +9,7 @@
 #include "config.h"
 #include "phone.h"
 #include "relay.h"
+#include "soc_guard.h"
 #include "utils.h"
 #include <math.h>
 
@@ -101,6 +102,18 @@ static String makeStatusJson() {
   doc["bf"]  = isBoilerFault();
   doc["bfr"] = getBoilerFaultReason() ? getBoilerFaultReason() : "";
 
+  // SoC guard (doc/todo/007-soc-guard-cutoff.md): switch, armed state, the
+  // cut-off it wants and its two thresholds, so the settings page shows the
+  // numbers the firmware actually uses.
+  SocGuardState sg = {};
+  soc_guard_get(&sg);
+  doc["sg"]  = sg.enabled;
+  doc["sga"] = sg.enabled && sg.armed;
+  doc["sgl"] = sg.intended_lvd_v;
+  if (sg.last_write_ms != 0) doc["sgok"] = sg.last_write_ok;  // absent = never written
+  doc["sgarm"] = SOC_GUARD_ARM_PCT;
+  doc["sgdis"] = SOC_GUARD_DISARM_PCT;
+
   // Phone snapshot. stale_secs reported by the phone is added to the on-ESP
   // snapshot age so the UI sees the true age of the underlying measurement,
   // not just how long ago we received the (already-stale) data.
@@ -192,6 +205,13 @@ static String handleCommand(JsonDocument& doc) {
     setBoilerManual(on);
     Serial.printf("[CMD] set_boiler_manual: %s\n", on ? "Manual" : "Auto");
     return makeAckJson(on ? "Boiler mode Manual" : "Boiler mode Auto");
+  }
+
+  if (strcmp(name, "set_soc_guard") == 0) {
+    bool on = doc["value"].as<int>() != 0;
+    soc_guard_set_enabled(on);
+    Serial.printf("[CMD] set_soc_guard: %s\n", on ? "on" : "off");
+    return makeAckJson(on ? "SoC guard on" : "SoC guard off");
   }
 
   if (strcmp(name, "clear_log") == 0) {

@@ -1722,6 +1722,18 @@
                 "value": "Boiler manual"
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "D"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "SoC guard armed"
+              }
+            ]
           }
         ]
       },
@@ -1778,9 +1790,17 @@
           },
           "query": "from(bucket: \"metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"chajda-boiler\")\n  |> filter(fn: (r) => r[\"_field\"] == \"manual\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: true)",
           "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "P951FEA4DE68E13C5"
+          },
+          "query": "from(bucket: \"metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"chajda-soc-guard\")\n  |> filter(fn: (r) => r[\"_field\"] == \"armed\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: true)",
+          "refId": "D"
         }
       ],
-      "title": "Boiler input / fault / manual",
+      "title": "Boiler input / fault / manual / SoC guard",
       "type": "state-timeline"
     },
     {
@@ -3608,5 +3628,5 @@
   "timezone": "browser",
   "title": "chajda",
   "uid": "chajda",
-  "version": 33
+  "version": 34
 }

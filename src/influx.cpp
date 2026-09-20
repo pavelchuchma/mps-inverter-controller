@@ -15,6 +15,7 @@
 #include "pylontech_comm.h"
 #include "phone.h"
 #include "relay.h"
+#include "soc_guard.h"
 #include "utils.h"
 
 // --- line-protocol field appenders ---
@@ -232,6 +233,22 @@ static void append_sample(String& buf, time_t ts, bool on_grid) {
     appendBool(line, first, "manual", isBoilerManual());
     appendFloat(line, first, "temp_high", g_temp_h);
     appendFloat(line, first, "temp_low", g_temp_l);
+    line += tsbuf;
+    buf += line;
+  }
+
+  // chajda-soc-guard — switch, armed state and the cut-off the guard wants.
+  // Its own measurement rather than fields on chajda-inverter-config: that one
+  // is written only when a QPIRI read lands, so an arm/disarm would show up to
+  // five minutes late and never in the event snapshots.
+  {
+    SocGuardState sg = {};
+    soc_guard_get(&sg);
+    String line = "chajda-soc-guard ";
+    bool first = true;
+    appendBool(line, first, "enabled", sg.enabled);
+    appendBool(line, first, "armed", sg.enabled && sg.armed);
+    appendFloat(line, first, "intended_lvd_v", sg.intended_lvd_v);
     line += tsbuf;
     buf += line;
   }

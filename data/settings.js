@@ -99,7 +99,7 @@ const ROWS = [
     qpiri: { idx: 11, type: "num", value: 54.5, unit: "V" },
     edit: { prefix: "PBFT", kind: "volt", min: 48.0, max: 58.4, step: 0.1 } },
   { id: "29", name: "Nízké stejnosměrné přerušení (LVD)", expected: "46.5 V",
-    note: "Šetrné minimum pro životnost baterií.",
+    note: "Šetrné minimum pro životnost baterií. SoC guard (níže) tento parametr přepíná 46.0 / 48.0 V.",
     qpiri: { idx: 9, type: "num", value: 46.5, unit: "V" },
     edit: { prefix: "PSDV", kind: "volt", min: 40.0, max: 48.0, step: 0.1 } },
   { id: "31", name: "Rovnováha solárního výkonu", expected: "Povoleno",
@@ -301,6 +301,65 @@ async function load() {
   }
 }
 
-document.getElementById("refresh").addEventListener("click", load);
+// ---- SoC guard (doc/todo/007-soc-guard-cutoff.md) ----
+// State comes from /status: sg (enabled), sga (armed), sgl (intended LVD V),
+// sgok (last PSDV write ACKed; absent = never written), sgarm / sgdis
+// (thresholds, so the text matches the firmware constants).
+let sgEnabled = false;
+
+function renderGuard(j) {
+  sgEnabled = !!j.sg;
+  const status = document.getElementById("sg-status");
+  const btn = document.getElementById("sg-toggle");
+  document.getElementById("sg-arm").textContent = j.sgarm !== undefined ? j.sgarm : "?";
+  document.getElementById("sg-dis").textContent = j.sgdis !== undefined ? j.sgdis : "?";
+  let text, cls;
+  if (!sgEnabled) {
+    text = "Vypnuto"; cls = "";
+  } else if (j.sga) {
+    text = `Zapnuto — AKTIVNÍ, LVD držen na ${Number(j.sgl).toFixed(1)} V`; cls = "err";
+  } else {
+    text = `Zapnuto — klid, LVD ${Number(j.sgl).toFixed(1)} V`; cls = "ok";
+  }
+  if (j.sgok === false) text += " (poslední zápis PSDV selhal, opakuje se po dalším čtení QPIRI)";
+  status.textContent = text;
+  status.className = "pill" + (cls ? " " + cls : "");
+  btn.textContent = sgEnabled ? "Vypnout guard" : "Zapnout guard";
+  btn.disabled = false;
+}
+
+async function loadGuard() {
+  try {
+    const resp = await fetch("/status", { cache: "no-store" });
+    if (!resp.ok) return;
+    renderGuard(await resp.json());
+  } catch (e) {
+    document.getElementById("sg-status").textContent = "Chyba čtení: " + e;
+  }
+}
+
+async function toggleGuard() {
+  const on = !sgEnabled;
+  const msg = on
+    ? "Zapnout SoC guard? Při nízkém SoC z BMS ESP zvedne LVD měniče na 48.0 V a výstup se vypne."
+    : "Vypnout SoC guard? Pokud je právě aktivní, LVD zůstane na 48.0 V — vrať ho ručně řádkem 29.";
+  if (!confirm(msg)) return;
+  const btn = document.getElementById("sg-toggle");
+  btn.disabled = true;
+  try {
+    const resp = await fetch("/cmd", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "cmd", name: "set_soc_guard", value: on ? 1 : 0 }),
+    });
+    if (!resp.ok) alert("HTTP chyba " + resp.status);
+  } catch (e) {
+    alert("Chyba: " + e);
+  }
+  await loadGuard();
+}
+
+document.getElementById("refresh").addEventListener("click", () => { load(); loadGuard(); });
 document.getElementById("update").addEventListener("click", doUpdate);
-window.addEventListener("DOMContentLoaded", load);
+document.getElementById("sg-toggle").addEventListener("click", toggleGuard);
+window.addEventListener("DOMContentLoaded", () => { load(); loadGuard(); });
