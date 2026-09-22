@@ -4,50 +4,21 @@ function logln(s) {
   el.textContent = (el.textContent === "—" ? "" : el.textContent + "\n") + s;
   el.scrollTop = el.scrollHeight;
 }
+// Connection pill: shown only while something is wrong, hidden on a good poll.
 function setConn(ok, msg) {
   const el = $("conn");
-  el.textContent = msg;
-  el.className = "pill " + (ok ? "ok" : "err");
+  el.textContent = ok ? "" : msg;
+  el.hidden = ok;
 }
 
-// Format byte counts (e.g. from /proc/net/dev) using base-1024 units.
-function formatBytes(b) {
-  if (b == null || isNaN(b)) return "—";
-  const n = Number(b);
-  const KB = 1024, MB = 1024 * 1024, GB = 1024 * 1024 * 1024;
-  if (n < KB) return `${n} B`;
-  if (n < MB) return `${Math.round(n / KB)} KB`;
-  if (n < GB) return `${Math.round(n / MB)} MB`;
-  return `${(n / GB).toFixed(2)} GB`;
-}
-
-// Format seconds into "Ns" / "NmNs" / "NhNmNs" for stale-suffix display.
-function formatStaleSecs(s) {
-  const total = Math.max(0, Math.round(Number(s) || 0));
-  if (total < 60) return `${total}s`;
-  if (total < 3600) {
-    const m = Math.floor(total / 60);
-    const ss = total % 60;
-    return `${m}m${String(ss).padStart(2, '0')}s`;
-  }
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  return `${h}h${String(m).padStart(2, '0')}m`;
-}
-
-// Apply a value + optional "stale: Xs" suffix to one of the phone tiles.
-// When stale, also flag the card so its value text fades to gray.
-function applyPhoneTile(cardId, valueId, suffixId, text, staleSecs, threshold) {
-  const card = $(cardId);
-  $(valueId).textContent = text;
-  if (text === "—") {
-    $(suffixId).textContent = "";
-    card.classList.add("stale");
-    return;
-  }
-  const isStale = Number(staleSecs) > threshold;
-  $(suffixId).textContent = isStale ? `stale: ${formatStaleSecs(staleSecs)}` : "";
-  card.classList.toggle("stale", isStale);
+// Format a power in W, switching to kW with one decimal from 1 kW up.
+// With `signed`, a positive value gets an explicit "+" (battery charging).
+function formatPower(w, signed) {
+  const n = Number(w);
+  if (w == null || isNaN(n)) return "—";
+  const sign = signed && n > 0 ? "+" : "";
+  if (Math.abs(n) >= 1000) return `${sign}${(n / 1000).toFixed(1)}kW`;
+  return `${sign}${Math.round(n)}W`;
 }
 
 // Format milliseconds (e.g. from millis()) to HH:MM:SS
@@ -144,12 +115,18 @@ async function send(obj) {
   }
 }
 
+const STATUS_TIMEOUT_MS = 3000;
+let statusInFlight = false;
+
 async function fetchStatus() {
-  // Add a 1s timeout to the status fetch
+  // The timeout is longer than the poll interval, so skip a tick while the
+  // previous request is still pending rather than piling requests on the ESP.
+  if (statusInFlight) return;
+  statusInFlight = true;
   const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
   const to = setTimeout(() => {
     try { ctrl && ctrl.abort(); } catch (_) {/* noop */ }
-  }, 1000);
+  }, STATUS_TIMEOUT_MS);
   try {
     const resp = await fetch('/status', { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
     if (!resp.ok) {
@@ -166,74 +143,21 @@ async function fetchStatus() {
 
     updateTemp("tempH", j.th);
     updateTemp("tempL", j.tl);
-    $("ac_out_voltage").textContent = valid && j.av !== undefined && j.av !== null ? Number(j.av).toFixed(1) : "—";
-    $("ac_active_w").textContent = valid && j.aw !== undefined && j.aw !== null ? String(Math.round(j.aw)) : "—";
     $("load_percent").textContent = valid && j.lp !== undefined && j.lp !== null ? String(Math.round(j.lp)) : "—";
-    $("batt_voltage").textContent = battValid && j.bv !== undefined && j.bv !== null ? Number(j.bv).toFixed(2) : "—";
-    $("batt_current").textContent = battValid && j.bc !== undefined && j.bc !== null ? String(Math.round(j.bc)) : "—";
-    $("batt_soc").textContent = battValid && j.bs !== undefined && j.bs !== null ? String(Math.round(j.bs)) : "—";
-    $("heatsink_temp").textContent = valid && j.ht !== undefined && j.ht !== null ? String(Math.round(j.ht)) : "—";
-    $("pv_input_current_batt").textContent = valid && j.pi !== undefined && j.pi !== null ? String(Math.round(j.pi)) : "—";
-    $("pv_input_voltage").textContent = valid && j.piv !== undefined && j.piv !== null ? Number(j.piv).toFixed(1) : "—";
-    $("pv_charging_power").textContent = valid && j.pcp !== undefined && j.pcp !== null ? String(Math.round(j.pcp)) : "—";
-    $("batt_mode").textContent = battValid && j.bm !== undefined && j.bm !== null && j.bm !== "" ? j.bm : "—";
 
-    // BMS row: the limits and SoH only the CAN link carries. Greyed out rather
-    // than blanked when the link is stale, so a dead link is visibly different
-    // from a value the pack has not sent yet.
-    const canValid = !!j.cav;
-    const bmsCard = $("bms_card");
-    if (canValid && j.ccl !== undefined && j.ccl !== null) {
-      let bms = `${Number(j.ccl).toFixed(0)} A chg / ${Number(j.dcl).toFixed(0)} A dchg`;
-      if (j.soh !== undefined && j.soh !== null) bms += ` · SoH ${Math.round(j.soh)} %`;
-      // The two links measure the same current independently, so a divergence
-      // is a live corruption warning rather than one found in Grafana later.
-      if (battValid && j.bc !== undefined && j.bc !== null
-          && j.cbc !== undefined && j.cbc !== null
-          && Math.abs(Number(j.bc) - Number(j.cbc)) > 2) {
-        bms += ` · ⚠ ${Number(j.cbc).toFixed(1)} A on CAN`;
-      }
-      $("bms_v").textContent = bms;
-    } else {
-      $("bms_v").textContent = "—";
-    }
-    if (bmsCard) bmsCard.classList.toggle("stale", !canValid);
-
-    // Phone tiles: battery, mobile-data traffic.
-    const phoneValid = !!j.phv;
-    if (!phoneValid) {
-      applyPhoneTile("phone_battery_card", "phone_battery_v", "phone_battery_stale", "—", 0, 0);
-      applyPhoneTile("phone_rmnet_card",   "phone_rmnet_v",   "phone_rmnet_stale",   "—", 0, 0);
-    } else {
-      const pct = j.phbp;
-      const statusRaw = (j.phbs || "").toString();
-      let battText = `${pct}%`;
-      if (j.phbc !== undefined && j.phbc !== null) {
-        const ma = Number(j.phbc);
-        const sign = ma > 0 ? "+" : "";
-        battText += `\n${sign}${ma.toFixed(0)} mA`;
-      }
-      applyPhoneTile("phone_battery_card", "phone_battery_v", "phone_battery_stale",
-                     battText, j.phbss, 120);
-
-      const rx = Number(j.phrx) || 0;
-      const tx = Number(j.phtx) || 0;
-      const totalMb = Math.round((rx + tx) / (1024 * 1024));
-      const rmnetText = `${totalMb.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} MB`;
-      applyPhoneTile("phone_rmnet_card", "phone_rmnet_v", "phone_rmnet_stale",
-                     rmnetText, j.phns, 120);
-    }
-
-    if (j.co !== undefined) {
-      const on = !!j.co;
-      $("charger_status").textContent = on ? "ON" : "OFF";
-      $("charger_status").style.color = on ? "#22c55e" : "#ef4444";
-    }
+    // Summary tiles: "78% +334W" (SoC + signed battery power from the Pylontech
+    // console, V*A) and the PV power from the roof as the inverter reports it.
+    const socOk = battValid && j.bs !== undefined && j.bs !== null;
+    const battPowerOk = battValid && j.bv !== undefined && j.bv !== null && j.bc !== undefined && j.bc !== null;
+    $("batt_soc_v").textContent = socOk ? `${Math.round(j.bs)}%` : "—";
+    $("batt_power_v").textContent = battPowerOk ? formatPower(Number(j.bv) * Number(j.bc), true) : "";
+    $("pv_power").textContent = valid && j.pcp !== undefined && j.pcp !== null ? formatPower(j.pcp, false) : "—";
 
     if (j.bo !== undefined) {
+      // Thermostat indicator: the boiler input is the phase behind the
+      // thermostat, so "on" means the boiler is asking for heat.
       boilerInputOn = !!j.bo;
-      $("boiler_on").textContent = boilerInputOn ? "ON" : "OFF";
-      $("boiler_on").style.color = boilerInputOn ? "#22c55e" : "#ef4444";
+      $("boiler_thermo").classList.toggle("on", boilerInputOn);
     }
 
     if (j.bman !== undefined) {
@@ -260,12 +184,22 @@ async function fetchStatus() {
         statusEl.style.fontWeight = "700";
         statusEl.style.padding = "0 6px";
       } else {
-        statusEl.textContent = boilerLabels[boilerPower] || "—";
-        statusEl.style.color = boilerPower > 0 ? "#ef4444" : "";
+        // Effective state: with the thermostat open nothing heats whatever the
+        // commanded power, so say so. In Manual the held power still matters
+        // (it resumes once the thermostat closes), so keep it visible.
+        const label = boilerLabels[boilerPower] || "—";
+        if (!boilerInputOn) {
+          statusEl.textContent = boilerManual && boilerPower > 0 ? `OFF · ${label}` : "OFF";
+          statusEl.style.color = "";
+        } else {
+          statusEl.textContent = label;
+          statusEl.style.color = boilerPower > 0 ? "#ef4444" : "";
+        }
         statusEl.style.background = "";
         statusEl.style.fontWeight = "";
         statusEl.style.padding = "";
       }
+      $("boiler_card").classList.toggle("stale", !boilerFault && !boilerInputOn);
       const btnsDisabled = boilerFault || !boilerInputOn;
       document.querySelectorAll(".boiler-btn").forEach((btn, i) => {
         btn.disabled = btnsDisabled;
@@ -285,14 +219,15 @@ async function fetchStatus() {
     }
   } catch (e) {
     if (e && (e.name === 'AbortError' || e.code === 20)) {
-      setConn(false, "Timeout 1s");
-      logln("Fetch timeout (1s)");
+      setConn(false, `Timeout ${STATUS_TIMEOUT_MS / 1000}s`);
+      logln(`Fetch timeout (${STATUS_TIMEOUT_MS / 1000}s)`);
     } else {
       setConn(false, "Fetch error");
       logln("Fetch error: " + e);
     }
   } finally {
     clearTimeout(to);
+    statusInFlight = false;
   }
 }
 

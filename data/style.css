@@ -18,5 +18,7 @@ input[type="range"].modified:focus{box-shadow:0 0 0 8px rgba(239,68,68,0.12);}
 pre{background:#111827;color:#e5e7eb;padding:10px;border-radius:12px;overflow:auto;margin:8px 0 0;}
 .muted{opacity:.65;font-size:12px;}
 .card.stale .v{color:#9ca3af;}
-.v.multiline{white-space:pre-line;}
-.stale-suffix{color:#6b7280;font-size:14px;font-weight:400;margin-left:8px;}
+.v.split{display:flex;justify-content:space-between;gap:12px;}
+.k.split{display:flex;justify-content:space-between;gap:8px;}
+.thermo::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:#9ca3af;margin-right:5px;vertical-align:middle;}
+.thermo.on::before{background:#22c55e;}
