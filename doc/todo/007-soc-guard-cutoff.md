@@ -69,10 +69,13 @@ does the switching, with the ESP only deciding *when* it is armed.
   deciding anything. If `lvd_v` is 48.0 and SoC is inside 15–25 %, the guard is
   armed from before the reboot (the nightly 00:00 restart, `main.cpp:450`, goes
   through here every day): keep it, do not disarm. Only SoC ≥ 25 % disarms.
-- **Guard off** (the toggle below): the guard writes nothing and leaves
-  whatever `lvd_v` the inverter has. Switching the guard off while armed does
-  not restore 46 V by itself — the settings page can do that, and it keeps the
-  "off means hands off" rule simple.
+- **Guard off** (the toggle below): while off the guard writes nothing. The
+  switch-off itself makes one exception: if program 29 reads 48.0 V at that
+  moment (the guard was armed), it writes `PSDV46.0` once, so switching the
+  guard off does not leave the output dead until somebody edits row 29 by
+  hand. Switching off in the disarmed state writes nothing. (Changed
+  2026-09-22; the original "off means hands off, use row 29" rule left a
+  trap for the rare off-while-armed case.)
 
 The ESP, the relays and the phone have their own supply and stay up through
 an LVD shutdown (verified in production, see

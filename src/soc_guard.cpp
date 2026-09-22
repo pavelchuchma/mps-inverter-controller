@@ -58,6 +58,22 @@ void soc_guard_set_enabled(bool on) {
   g.decided = false;
   stale_logged = false;
 
+  // Switching off while armed: hand the inverter back its normal cut-off once,
+  // so "guard off" does not leave the output dead at 48 V until somebody edits
+  // program 29 by hand. Judged on the live QPIRI value, not on g.armed, which
+  // may be undecided right after boot. Off in the disarmed state writes nothing.
+  // A NAK is logged by write_lvd() and not retried: the guard is off now.
+  if (!on) {
+    InverterConfig cfg = {};
+    if (!inverter_get_config(&cfg)) {
+      printInfo("SoC guard: off before the first QPIRI, LVD left as is");
+    } else if (fabsf(cfg.lvd_v - SOC_GUARD_LVD_ARMED_V) < SOC_GUARD_LVD_EPS_V) {
+      g.armed = false;
+      g.intended_lvd_v = SOC_GUARD_LVD_NORMAL_V;
+      write_lvd(SOC_GUARD_LVD_NORMAL_V, "disarmed by switch-off");
+    }
+  }
+
   Preferences prefs;
   if (prefs.begin(NVS_NAMESPACE, false)) {
     prefs.putBool(NVS_KEY_ENABLED, on);
