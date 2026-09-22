@@ -91,6 +91,12 @@ static String makeStatusJson() {
   doc["pcp"] = s.pv_charging_power;
   doc["bm"]  = bat.basic_status;   // battery mode: Idle / Charge / Discharge
   doc["iv"]  = g_inverter_data_valid;
+  // QPIGS status bits, raw and decoded. `lo` = b4 "load status": the inverter's own
+  // view of whether its AC output is switched on, independent of the sensed
+  // voltage it reports in `av`.
+  doc["dsb"] = s.device_status_bits;
+  doc["asb"] = s.additional_status_bits;
+  doc["lo"]  = (s.device_status_bits & 0x10) != 0;
   doc["ts"]  = s.ts_ms;
   doc["th"]  = isnan(g_temp_h) ? JsonVariant() : g_temp_h;
   doc["tl"]  = isnan(g_temp_l) ? JsonVariant() : g_temp_l;
@@ -341,12 +347,21 @@ static void handleInvConfig() {
   // Selectable max-charging-current values; used by the UI to offer valid
   // choices for the editable "max charging current" field. Best-effort.
   bool ok_qmchgcr = inverter_query_raw("QMCHGCR", qmchgcr);
+  // Diagnostics: warning/fault bitmap and the parallel-info record (carries a
+  // fault code and its own load-on bit). Best-effort, raw payloads.
+  String qpiws, qpgs0, qpigs;
+  bool ok_qpiws = inverter_query_raw("QPIWS", qpiws);
+  bool ok_qpgs0 = inverter_query_raw("QPGS0", qpgs0);
+  bool ok_qpigs = inverter_query_raw("QPIGS", qpigs);
 
   doc["ok"] = ok_qpiri && ok_qflag;
   doc["qpiri"] = ok_qpiri ? qpiri : String();
   doc["qflag"] = ok_qflag ? qflag : String();
   doc["qmod"]  = ok_qmod ? qmod : String();
   doc["qmchgcr"] = ok_qmchgcr ? qmchgcr : String();
+  doc["qpiws"] = ok_qpiws ? qpiws : String();
+  doc["qpgs0"] = ok_qpgs0 ? qpgs0 : String();
+  doc["qpigs"] = ok_qpigs ? qpigs : String();
   doc["ts"] = millis();
 
   String out;

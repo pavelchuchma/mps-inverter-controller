@@ -61,6 +61,29 @@
     Mezi tím běží výstup jen z PV.
   </div>
 
+  <h2 style="margin-top:24px;">Stav a varování měniče</h2>
+  <div class="toolbar">
+    <span id="inv-mode" class="pill">…</span>
+    <span id="inv-load" class="pill">…</span>
+    <span id="inv-fault" class="pill">…</span>
+  </div>
+  <div class="tbl-wrap">
+    <table id="warn-tbl">
+      <thead>
+        <tr>
+          <th>Bit</th>
+          <th>Varování / porucha (QPIWS)</th>
+          <th>Typ</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="muted" style="margin-top:6px;">
+    Zobrazují se jen nastavené bity. LINE_FAIL (a5) je v off-grid provozu normální stav, chybí síť.
+    Typ „porucha/varování“ se řídí bitem a1 (Inverter fault).
+  </div>
+
   <div class="muted" style="margin-top:14px;">Raw payloady (pro ověření pořadí tokenů):</div>
   <pre id="raw">—</pre>
 

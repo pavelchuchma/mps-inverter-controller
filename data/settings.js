@@ -157,10 +157,13 @@ function esc(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// Empty text hides the pill: a successful read has nothing to say, the table
+// and the state section below speak for themselves.
 function setStatus(text, cls) {
   const status = document.getElementById("status");
   status.textContent = text;
   status.className = "pill" + (cls ? " " + cls : "");
+  status.style.display = text ? "" : "none";
 }
 
 // Selectable max-charging-current values from QMCHGCR (raw tokens, e.g. "010").
@@ -193,7 +196,96 @@ function editCell(row, raw) {
     data-kind="curr" data-orig="${esc(raw)}">${opts}</select>`;
 }
 
+// QPIWS bit map (doc/ps_rs232_protocol_FULL_ai_ready.txt, 4.11). kind: "fault",
+// "warn", or "a1" = fault when a1 (Inverter fault) is set, otherwise a warning.
+const QPIWS_BITS = {
+  1:  ["Inverter fault", "fault"],
+  2:  ["Bus over", "fault"],
+  3:  ["Bus under", "fault"],
+  4:  ["Bus soft fail", "fault"],
+  5:  ["LINE_FAIL (chybí síť)", "warn"],
+  6:  ["OPV short (zkrat na výstupu)", "warn"],
+  7:  ["Inverter voltage too low", "fault"],
+  8:  ["Inverter voltage too high", "fault"],
+  9:  ["Over temperature", "a1"],
+  10: ["Fan locked", "a1"],
+  11: ["Battery voltage high", "a1"],
+  12: ["Battery low alarm", "warn"],
+  14: ["Battery under shutdown", "warn"],
+  16: ["Overload", "a1"],
+  17: ["EEPROM fault", "warn"],
+  18: ["Inverter over current", "fault"],
+  19: ["Inverter soft fail", "fault"],
+  20: ["Self test fail", "fault"],
+  21: ["OP DC voltage over", "fault"],
+  22: ["Battery open", "fault"],
+  23: ["Current sensor fail", "fault"],
+  24: ["Battery short", "fault"],
+  25: ["Power limit", "warn"],
+  26: ["PV voltage high", "warn"],
+  27: ["MPPT overload fault", "warn"],
+  28: ["MPPT overload", "warn"],
+};
+
+// QMOD work-mode letters.
+const QMOD_NAMES = { P: "Power on", S: "Standby", L: "Line", B: "Battery", F: "Fault", H: "Power saving" };
+
+function setPill(id, text, cls) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = "pill" + (cls ? " " + cls : "");
+}
+
+// Render the inverter's own view of its state: work mode, whether it has the AC
+// output switched on (QPIGS b4 and QPGS0 b1), the QPGS0 fault code and the set
+// QPIWS bits. The ESP only relays the raw payloads, the decoding lives here.
+function renderInverterState(data) {
+  const mode = (data.qmod || "").trim();
+  setPill("inv-mode", "Mód: " + (mode ? `${mode} (${QMOD_NAMES[mode] || "?"})` : "?"),
+          mode === "F" ? "err" : (mode ? "ok" : ""));
+
+  const qpigs = (data.qpigs || "").trim().split(/\s+/);
+  const qpgs = (data.qpgs0 || "").trim().split(/\s+/);
+  // QPIGS token 16 = device status bits b7..b0 as an 8-char string; b4 = load on.
+  const dsb = qpigs.length > 16 ? qpigs[16] : "";
+  const loadQpigs = dsb.length === 8 ? dsb[3] === "1" : null;
+  // QPGS0 token 19 = inverter status bits b7..b0; b1 = load on. Token 3 = fault code.
+  const isb = qpgs.length > 19 ? qpgs[19] : "";
+  const loadQpgs = isb.length === 8 ? isb[6] === "1" : null;
+  const fault = qpgs.length > 3 ? qpgs[3] : "";
+
+  if (loadQpigs === null && loadQpgs === null) {
+    setPill("inv-load", "Výstup: ?", "");
+  } else {
+    const on = loadQpigs !== false && loadQpgs !== false;
+    const agree = loadQpigs === null || loadQpgs === null || loadQpigs === loadQpgs;
+    setPill("inv-load", `Výstup: ${on ? "ZAPNUT" : "VYPNUT"}` + (agree ? "" : " (QPIGS/QPGS0 nesouhlasí)"),
+            on && agree ? "ok" : "err");
+  }
+  setPill("inv-fault", "Kód poruchy: " + (fault || "?"),
+          fault === "" ? "" : (fault === "00" ? "ok" : "err"));
+
+  const bits = (data.qpiws || "").trim();
+  const a1 = bits.length > 1 && bits[1] === "1";
+  const rows = [];
+  for (let i = 0; i < bits.length; i++) {
+    if (bits[i] !== "1") continue;
+    const def = QPIWS_BITS[i];
+    const name = def ? def[0] : "(nedokumentovaný bit)";
+    let kind = def ? def[1] : "warn";
+    if (kind === "a1") kind = a1 ? "fault" : "warn";
+    const normal = i === 5;  // off-grid: no grid is the expected state
+    const cls = normal ? "match" : (kind === "fault" ? "mismatch" : "");
+    const label = normal ? "očekávané (off-grid)" : (kind === "fault" ? "PORUCHA" : "varování");
+    rows.push(`<tr class="${cls}"><td class="id">a${i}</td><td>${esc(name)}</td><td>${label}</td></tr>`);
+  }
+  if (!bits) rows.push(`<tr><td class="id">—</td><td>QPIWS neodpovědělo</td><td></td></tr>`);
+  else if (!rows.length) rows.push(`<tr class="match"><td class="id">—</td><td>žádné varování</td><td>✓</td></tr>`);
+  document.querySelector("#warn-tbl tbody").innerHTML = rows.join("");
+}
+
 function render(data) {
+  renderInverterState(data);
   const toks = (data.qpiri || "").trim().split(/\s+/).filter(s => s.length);
   const flags = parseFlags(data.qflag || "");
   MCHGCR = (data.qmchgcr || "").trim().split(/\s+/).filter(s => s.length);
@@ -201,7 +293,7 @@ function render(data) {
   if (!data.ok) {
     setStatus("Čtení selhalo nebo neúplné — měnič neodpověděl na QPIRI/QFLAG. Zkus Refresh.", "err");
   } else {
-    setStatus(`Načteno z měniče (${toks.length} QPIRI tokenů). Mód: ${data.qmod || "?"}`, "ok");
+    setStatus("", "");
   }
 
   const rows = ROWS.map(row => {
@@ -224,7 +316,10 @@ function render(data) {
     `QPIRI:   ${data.qpiri || "(prázdné)"}\n` +
     `QFLAG:   ${data.qflag || "(prázdné)"}\n` +
     `QMOD:    ${data.qmod || "(prázdné)"}\n` +
-    `QMCHGCR: ${data.qmchgcr || "(prázdné)"}`;
+    `QMCHGCR: ${data.qmchgcr || "(prázdné)"}\n` +
+    `QPIGS:   ${data.qpigs || "(prázdné)"}\n` +
+    `QPIWS:   ${data.qpiws || "(prázdné)"}\n` +
+    `QPGS0:   ${data.qpgs0 || "(prázdné)"}`;
 }
 
 // Collect changed editable fields and build write commands. Returns
