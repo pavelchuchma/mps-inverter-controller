@@ -70,7 +70,9 @@ void webserver_set_reset_info(int reason, const char* reason_str) {
 
 // --------- JSON helpers (moved from main.cpp) ----------
 // Short JSON keys to minimize GSM payload (~50% smaller); data/app.js reads matching short names.
-static String makeStatusJson() {
+// The bare /status carries only what the main page shows. /status?full=1 adds
+// everything the details and settings pages need (data/details.js, data/settings.js).
+static String makeStatusJson(bool full) {
   JsonDocument doc;
   InverterState s = {};
   inverter_get_status(&s);
@@ -78,19 +80,41 @@ static String makeStatusJson() {
   // console, independent of the inverter link.
   PylontechState bat = {};
   pylontech_get_status(&bat);
-  doc["av"]  = s.ac_out_voltage;
-  doc["aw"]  = s.ac_active_w;
-  doc["lp"]  = s.load_percent;
+  doc["iv"]  = g_inverter_data_valid;
+  doc["bav"] = g_pylontech_data_valid;
+  doc["bs"]  = bat.soc;
   doc["bv"]  = bat.voltage;
   doc["bc"]  = bat.current;   // signed: + charge / - discharge
-  doc["bs"]  = bat.soc;
-  doc["bav"] = g_pylontech_data_valid;
+  doc["pcp"] = s.pv_charging_power;
+  doc["lp"]  = s.load_percent;
+  doc["th"]  = isnan(g_temp_h) ? JsonVariant() : g_temp_h;
+  doc["tl"]  = isnan(g_temp_l) ? JsonVariant() : g_temp_l;
+
+  doc["bp"]  = (int)getBoilerPower();
+  doc["bman"] = isBoilerManual();   // boiler mode: true = Manual, false = Auto
+  doc["bo"]  = isBoilerOn();
+  doc["bf"]  = isBoilerFault();
+  doc["bfr"] = getBoilerFaultReason() ? getBoilerFaultReason() : "";
+
+  if (!full) {
+    String out;
+    serializeJson(doc, out);
+    return out;
+  }
+
+  // ---- Inverter (QPIGS) ----
+  doc["av"]  = s.ac_out_voltage;
+  doc["aw"]  = s.ac_active_w;
+  doc["ava"] = s.ac_apparent_va;
   doc["ht"]  = s.heatsink_temp;
   doc["pi"]  = s.pv_input_current_batt;
   doc["piv"] = s.pv_input_voltage;
-  doc["pcp"] = s.pv_charging_power;
-  doc["bm"]  = bat.basic_status;   // battery mode: Idle / Charge / Discharge
-  doc["iv"]  = g_inverter_data_valid;
+  // The inverter's own view of the battery, next to the console's above.
+  doc["ibv"] = s.batt_voltage;
+  doc["bvs"] = s.batt_voltage_from_scc;
+  doc["ibs"] = s.batt_soc;
+  doc["bca"] = s.batt_charge_current;
+  doc["bda"] = s.batt_discharge_current;
   // QPIGS status bits, raw and decoded. `lo` = b4 "load status": the inverter's own
   // view of whether its AC output is switched on, independent of the sensed
   // voltage it reports in `av`.
@@ -98,16 +122,37 @@ static String makeStatusJson() {
   doc["asb"] = s.additional_status_bits;
   doc["lo"]  = (s.device_status_bits & 0x10) != 0;
   doc["ts"]  = s.ts_ms;
-  doc["th"]  = isnan(g_temp_h) ? JsonVariant() : g_temp_h;
-  doc["tl"]  = isnan(g_temp_l) ? JsonVariant() : g_temp_l;
+  char mode_code = '\0';
+  char mode_name[32] = "";
+  if (inverter_get_mode(&mode_code, mode_name, sizeof(mode_name)) && mode_code) {
+    char ms[2] = {mode_code, '\0'};
+    doc["im"]  = ms;         // QMOD letter
+    doc["imn"] = mode_name;  // its name
+  }
 
+  // ---- Battery console (RS485) ----
+  doc["bm"]  = bat.basic_status;   // battery mode: Idle / Charge / Discharge
+  doc["bt"]  = bat.temperature;
+  doc["bal"] = bat.system_alarm;
+  doc["slp"] = pylontech_comm_paused();  // console link paused (telnet client connected)
+
+  // ---- Battery CAN link ----
+  // Only the fields the UI actually shows plus the two the cross-check row
+  // needs; the full decoded set stays on /can, which is the diagnostic
+  // endpoint. Sent even when stale so the UI can grey the row rather than
+  // blank it.
+  PylontechCanState can = {};
+  pylontech_can_get(&can);
+  doc["cav"] = pylontech_can_valid();
+  doc["ccl"] = can.ccl_a;
+  doc["dcl"] = can.dcl_a;
+  doc["chv"] = can.charge_v;
+  doc["soh"] = can.soh;
+  doc["cbv"] = can.voltage_v;
+  doc["cbc"] = can.current_a;   // signed, same convention as bc
+
+  // ---- Mobile charger / SoC guard ----
   doc["co"]  = isMobileChargerOn();
-  doc["bp"]  = (int)getBoilerPower();
-  doc["bman"] = isBoilerManual();   // boiler mode: true = Manual, false = Auto
-  doc["bo"]  = isBoilerOn();
-  doc["bf"]  = isBoilerFault();
-  doc["bfr"] = getBoilerFaultReason() ? getBoilerFaultReason() : "";
-
   // SoC guard (doc/todo/007-soc-guard-cutoff.md): switch, armed state, the
   // cut-off it wants and its two thresholds, so the settings page shows the
   // numbers the firmware actually uses.
@@ -120,9 +165,10 @@ static String makeStatusJson() {
   doc["sgarm"] = SOC_GUARD_ARM_PCT;
   doc["sgdis"] = SOC_GUARD_DISARM_PCT;
 
-  // Phone snapshot. stale_secs reported by the phone is added to the on-ESP
-  // snapshot age so the UI sees the true age of the underlying measurement,
-  // not just how long ago we received the (already-stale) data.
+  // ---- Phone snapshot ----
+  // stale_secs reported by the phone is added to the on-ESP snapshot age so
+  // the UI sees the true age of the underlying measurement, not just how long
+  // ago we received the (already-stale) data.
   PhoneState ph = {};
   bool phoneValid = phone_get_status(&ph);
   doc["phv"] = phoneValid;
@@ -139,22 +185,8 @@ static String makeStatusJson() {
     doc["phns"]  = net_stale + snapshot_age_secs;
   }
 
-  // Battery CAN link. Only the fields the UI actually shows plus the two the
-  // cross-check row needs; the full decoded set stays on /can, which is the
-  // diagnostic endpoint. Sent even when stale so the UI can grey the row rather
-  // than blank it.
-  PylontechCanState can = {};
-  pylontech_can_get(&can);
-  doc["cav"] = pylontech_can_valid();
-  doc["ccl"] = can.ccl_a;
-  doc["dcl"] = can.dcl_a;
-  doc["chv"] = can.charge_v;
-  doc["soh"] = can.soh;
-  doc["cbv"] = can.voltage_v;
-  doc["cbc"] = can.current_a;   // signed, same convention as bc
-
-  doc["slp"] = pylontech_comm_paused();  // console link paused (telnet client connected)
-
+  // ---- System ----
+  doc["up"]  = millis();
   doc["rr"]  = (int)g_reset_reason_ws;
   doc["rrs"] = g_reset_reason_str_ws;
 
@@ -246,7 +278,8 @@ static void handleStatus() {
   server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   server.sendHeader("Pragma", "no-cache");
   server.sendHeader("Expires", "-1");
-  String s = makeStatusJson();
+  bool full = server.hasArg("full") && server.arg("full") != "0";
+  String s = makeStatusJson(full);
   server.send(200, "application/json", s);
 }
 

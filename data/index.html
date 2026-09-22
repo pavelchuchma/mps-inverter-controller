@@ -20,11 +20,7 @@
     <div class="card" id="boiler_card"><div class="k split"><span>Boiler</span><span id="boiler_thermo" class="thermo">termostat</span></div><div class="v"><span id="boiler_status">—</span></div><div class="btn-group" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;"><button class="boiler-btn" onclick="setBoiler(0)">OFF</button><button class="boiler-btn" onclick="setBoiler(1)">500W</button><button class="boiler-btn" onclick="setBoiler(2)">1000W</button><button class="boiler-btn" onclick="setBoiler(3)">2000W</button><button id="boiler_mode_btn" class="mode-btn" onclick="toggleBoilerManual()" title="Manual holds the selected power; Auto regulates it from PV surplus and battery discharge">Auto</button></div></div>
   </div>
 
-    <div class="muted" style="margin-top:10px;">Log:</div>
-    <pre id="log">—</pre>
-  </div>
-
   <script src="./app.js" defer></script>
-  <div style="margin-top:8px; text-align:center;"><a href="/settings.html">settings</a> <a href="/app.log" style="margin-left:8px;">log</a> <button onclick="clearLog()" style="margin-left:8px;">clear log</button> <button onclick="restartDevice()" style="margin-left:8px;">restart</button></div>
+  <div style="margin-top:14px; text-align:center;"><a href="/details.html">details</a></div>
 </body>
 </html>

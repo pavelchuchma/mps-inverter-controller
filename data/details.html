@@ -1,0 +1,70 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inverter details</title>
+  <link rel="stylesheet" href="./style.css">
+  <style>
+    body{max-width:640px;margin:0 auto;}
+    h2{margin:18px 0 8px;font-size:16px;opacity:.75;}
+    h2:first-of-type{margin-top:0;}
+    .tbl-wrap{overflow-x:auto;background:#fff;border:1px solid #e6e8ee;border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.04);}
+    table{border-collapse:collapse;width:100%;font-size:14px;}
+    td{padding:7px 10px;border-bottom:1px solid #eef0f4;vertical-align:top;}
+    tr:last-child td{border-bottom:none;}
+    td.n{opacity:.7;}
+    td.val{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap;text-align:right;}
+    td.src{font-size:11px;opacity:.5;width:1%;white-space:nowrap;}
+    tr.stale td.val{color:#9ca3af;}
+    .flag{display:inline-block;padding:1px 7px;border-radius:999px;font-size:12px;font-weight:600;margin:0 4px 2px 0;background:#eef2ff;}
+    .flag.on{background:#dcfce7;color:#166534;}
+    .flag.off{background:#f1f5f9;color:#64748b;}
+    .flag.bad{background:#fee2e2;color:#991b1b;}
+    .toolbar{display:flex;gap:10px;align-items:center;margin:0 0 12px;flex-wrap:wrap;}
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <a href="/">← zpět</a>
+    <a href="/settings.html">settings</a>
+    <span id="conn" class="pill err" hidden></span>
+  </div>
+
+  <h2>Výkony</h2>
+  <div class="tbl-wrap"><table><tbody id="power"></tbody></table></div>
+
+  <h2>Baterie – proud</h2>
+  <div class="tbl-wrap"><table><tbody id="current"></tbody></table></div>
+
+  <h2>Baterie – napětí</h2>
+  <div class="tbl-wrap"><table><tbody id="voltage"></tbody></table></div>
+
+  <h2>SoC a režim</h2>
+  <div class="tbl-wrap"><table><tbody id="soc"></tbody></table></div>
+
+  <h2>Teploty</h2>
+  <div class="tbl-wrap"><table><tbody id="temp"></tbody></table></div>
+
+  <h2>Boiler a SoC guard</h2>
+  <div class="tbl-wrap"><table><tbody id="boiler"></tbody></table></div>
+
+  <h2>Limity: měnič vs. BMS</h2>
+  <div class="tbl-wrap"><table><tbody id="limits"></tbody></table></div>
+
+  <h2>CAN link a BMS flagy</h2>
+  <div class="tbl-wrap"><table><tbody id="can"></tbody></table></div>
+
+  <h2>Telefon</h2>
+  <div class="tbl-wrap"><table><tbody id="phone"></tbody></table></div>
+
+  <h2>Systém</h2>
+  <div class="tbl-wrap"><table><tbody id="system"></tbody></table></div>
+
+  <div class="muted" style="margin-top:14px;">Log:</div>
+  <pre id="log">—</pre>
+  <div style="margin-top:8px; text-align:center;"><a href="/app.log">app.log</a> <button onclick="clearLog()" style="margin-left:8px;">clear log</button> <button onclick="restartDevice()" style="margin-left:8px;">restart</button></div>
+
+  <script src="./details.js" defer></script>
+</body>
+</html>

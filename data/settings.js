@@ -425,7 +425,7 @@ function renderGuard(j) {
 
 async function loadGuard() {
   try {
-    const resp = await fetch("/status", { cache: "no-store" });
+    const resp = await fetch("/status?full=1", { cache: "no-store" });
     if (!resp.ok) return;
     renderGuard(await resp.json());
   } catch (e) {

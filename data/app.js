@@ -1,9 +1,6 @@
 const $ = (id) => document.getElementById(id);
-function logln(s) {
-  const el = $("log");
-  el.textContent = (el.textContent === "—" ? "" : el.textContent + "\n") + s;
-  el.scrollTop = el.scrollHeight;
-}
+// The log pane lives on details.html; here the traffic goes to the console.
+function logln(s) { console.log(s); }
 // Connection pill: shown only while something is wrong, hidden on a good poll.
 function setConn(ok, msg) {
   const el = $("conn");
@@ -33,7 +30,6 @@ function formatMsToHMS(ms) {
   return `${hh}:${mm}:${ss}`;
 }
 
-let resetReasonLogged = false;
 let boilerPower = 0;
 let boilerFault = false;
 let boilerInputOn = true; // start enabled; updated from j.bo on first /status
@@ -69,16 +65,6 @@ function updateTemp(elId, raw) {
     st.candidate = v;
     st.count = 1;
   }
-}
-
-async function clearLog() {
-  if (!confirm("Clear /app.log on ESP?")) return;
-  await send({ type: "cmd", name: "clear_log" });
-}
-
-async function restartDevice() {
-  if (!confirm("Restart ESP?")) return;
-  await send({ type: "cmd", name: "restart" });
 }
 
 async function setBoiler(level) {
@@ -210,13 +196,6 @@ async function fetchStatus() {
       });
     }
 
-    if (!resetReasonLogged && (j.rr !== undefined || j.rrs !== undefined)) {
-      const rr = (j.rrs || "").toString();
-      const rrn = (j.rr !== undefined) ? String(j.rr) : "";
-      const msg = rr || rrn ? `ESP reset reason: ${rr}${rr && rrn ? ` (${rrn})` : rrn ? rrn : ""}` : "ESP reset reason: (unknown)";
-      logln(msg);
-      resetReasonLogged = true;
-    }
   } catch (e) {
     if (e && (e.name === 'AbortError' || e.code === 20)) {
       setConn(false, `Timeout ${STATUS_TIMEOUT_MS / 1000}s`);
