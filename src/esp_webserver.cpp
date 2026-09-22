@@ -95,6 +95,21 @@ static String makeStatusJson(bool full) {
   doc["bo"]  = isBoilerOn();
   doc["bf"]  = isBoilerFault();
   doc["bfr"] = getBoilerFaultReason() ? getBoilerFaultReason() : "";
+  // Main page flow diagram: house consumption, inverter mode name and the SoC
+  // guard marker on the battery bar.
+  doc["aw"]  = s.ac_active_w;
+  char mode_code = '\0';
+  char mode_name[32] = "";
+  if (inverter_get_mode(&mode_code, mode_name, sizeof(mode_name)) && mode_code) {
+    char ms[2] = {mode_code, '\0'};
+    doc["im"]  = ms;         // QMOD letter
+    doc["imn"] = mode_name;  // its name
+  }
+  SocGuardState sg = {};
+  soc_guard_get(&sg);
+  doc["sg"]  = sg.enabled;
+  doc["sga"] = sg.enabled && sg.armed;
+  doc["sgarm"] = SOC_GUARD_ARM_PCT;
 
   if (!full) {
     String out;
@@ -104,7 +119,6 @@ static String makeStatusJson(bool full) {
 
   // ---- Inverter (QPIGS) ----
   doc["av"]  = s.ac_out_voltage;
-  doc["aw"]  = s.ac_active_w;
   doc["ava"] = s.ac_apparent_va;
   doc["ht"]  = s.heatsink_temp;
   doc["pi"]  = s.pv_input_current_batt;
@@ -122,13 +136,6 @@ static String makeStatusJson(bool full) {
   doc["asb"] = s.additional_status_bits;
   doc["lo"]  = (s.device_status_bits & 0x10) != 0;
   doc["ts"]  = s.ts_ms;
-  char mode_code = '\0';
-  char mode_name[32] = "";
-  if (inverter_get_mode(&mode_code, mode_name, sizeof(mode_name)) && mode_code) {
-    char ms[2] = {mode_code, '\0'};
-    doc["im"]  = ms;         // QMOD letter
-    doc["imn"] = mode_name;  // its name
-  }
 
   // ---- Battery console (RS485) ----
   doc["bm"]  = bat.basic_status;   // battery mode: Idle / Charge / Discharge
@@ -156,13 +163,9 @@ static String makeStatusJson(bool full) {
   // SoC guard (doc/todo/007-soc-guard-cutoff.md): switch, armed state, the
   // cut-off it wants and its two thresholds, so the settings page shows the
   // numbers the firmware actually uses.
-  SocGuardState sg = {};
-  soc_guard_get(&sg);
-  doc["sg"]  = sg.enabled;
-  doc["sga"] = sg.enabled && sg.armed;
+  // `sg`, `sga` and `sgarm` are already in the bare payload above.
   doc["sgl"] = sg.intended_lvd_v;
   if (sg.last_write_ms != 0) doc["sgok"] = sg.last_write_ok;  // absent = never written
-  doc["sgarm"] = SOC_GUARD_ARM_PCT;
   doc["sgdis"] = SOC_GUARD_DISARM_PCT;
 
   // ---- Phone snapshot ----

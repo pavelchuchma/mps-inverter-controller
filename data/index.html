@@ -1,26 +1,204 @@
 <!doctype html>
-<html>
+<html lang="cs">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
   <title>Inverter</title>
-  <link rel="stylesheet" href="./style.css">
+  <style>
+    :root{
+      --bg:#f2f4f0; --ink:#1b221e; --muted:#6a746e; --line:#d6dbd6; --seg:#e4e8e3;
+      --pv:#d9890a; --bat:#2c9a5f; --bat-lo:#d9890a; --bat-crit:#cf4a3a; --house:#3a6db0; --heat:#d9542b; --idle:#9aa39d;
+      --ok:#2c9a5f; --err:#cf4a3a;
+    }
+    @media (prefers-color-scheme: dark){
+      :root{
+        --bg:#131917; --ink:#e7ebe8; --muted:#8e988f; --line:#2a332e; --seg:#1f2824;
+        --pv:#f0a627; --bat:#43b878; --bat-lo:#f0a627; --bat-crit:#e5695a; --house:#6f9ad8; --heat:#ef7a55; --idle:#5d675f;
+        --ok:#43b878; --err:#e5695a;
+      }
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
+    .wrap{max-width:440px;margin:0 auto;padding:calc(12px + env(safe-area-inset-top,0px)) 16px calc(28px + env(safe-area-inset-bottom,0px))}
+    .num{font-variant-numeric:tabular-nums}
+
+    /* header: data age with a status dot, error banner only when something is wrong */
+    header{display:flex;justify-content:flex-end}
+    header .age{font-size:12px;color:var(--muted)}
+    header .age::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--err);margin-right:6px;vertical-align:1px}
+    .banner{margin-top:10px;padding:8px 12px;border-radius:10px;background:var(--err);color:#fff;font-size:13px;font-weight:600}
+
+    /* energy flow diagram */
+    .flow{display:block;width:100%;height:auto;margin:6px 0 0}
+    .flow text{font-family:inherit;fill:var(--ink)}
+    .flow .lbl{font-size:11px;fill:var(--muted);letter-spacing:.04em;text-transform:uppercase}
+    .flow .val{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+    .flow .val.heat{fill:var(--heat)}
+    .flow .temp{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em;fill:#fff}
+    .flow .pct{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
+    .flow .node{fill:var(--bg);stroke-width:2}
+    .flow .icon{fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+    .flow .wire{fill:none;stroke:var(--line);stroke-width:2.5;stroke-linecap:round}
+    .flow .cur{fill:none;stroke-width:2.5;stroke-linecap:round;stroke-dasharray:4 9;opacity:0}
+    .flow .cur.on{opacity:1;animation:run 1.1s linear infinite}
+    .flow .cur.on.rev{animation-direction:reverse}
+    @keyframes run{to{stroke-dashoffset:-13}}
+    @media (prefers-reduced-motion: reduce){.flow .cur.on{animation:none;stroke-dasharray:none;opacity:.9}}
+    .stale .flow .val,.stale .flow .pct,.stale .flow .cur,.stale #inv_arc{opacity:.35}
+    .stale .flow .cur.on{animation:none}
+
+    /* battery bar with the SoC guard threshold */
+    .batt{margin-top:18px}
+    .bar{position:relative;height:12px;border-radius:999px;background:var(--seg)}
+    .bar .fill{height:100%;border-radius:999px;background:var(--bat);transition:width .6s}
+    .bar .fill.lo{background:var(--bat-lo)}
+    .bar .fill.crit{background:var(--bat-crit)}
+    .bar .guard{position:absolute;top:-5px;bottom:-5px;left:15%;width:2px;background:var(--ink);opacity:.5;border-radius:1px}
+    .bar .guard span{position:absolute;top:100%;left:-4px;margin-top:3px;font-size:10px;color:var(--muted);white-space:nowrap;letter-spacing:.02em}
+    .battrow{display:flex;justify-content:space-between;align-items:baseline;margin-top:20px;font-size:13px;color:var(--muted)}
+    .battrow b{color:var(--ink);font-weight:600}
+
+    /* sections */
+    .sec{margin-top:26px;padding-top:16px;border-top:1px solid var(--line)}
+    .sechead{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+    .sechead h2{margin:0;font-size:13px;font-weight:600;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+    .thermo{font-size:12px;color:var(--muted)}
+    .thermo::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--idle);margin-right:6px}
+    .thermo.on::before{background:var(--ok)}
+    .boilstate{display:flex;align-items:baseline;gap:10px;margin:8px 0 12px}
+    .boilstate .big{font-size:30px;font-weight:700;letter-spacing:-.01em}
+    .boilstate .big.heat{color:var(--heat)}
+    .boilstate .big.fault{background:var(--err);color:#fff;padding:0 10px;border-radius:8px;font-size:22px}
+    .boilstate .note{font-size:13px;color:var(--muted)}
+
+    .segs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:4px;border-radius:14px;background:var(--seg)}
+    .segs button{font:inherit;font-weight:600;font-size:15px;padding:12px 0;border:0;border-radius:10px;background:transparent;color:var(--ink);cursor:pointer;font-variant-numeric:tabular-nums}
+    .segs button[aria-pressed="true"]{background:var(--bg);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+    .segs button[aria-pressed="true"].heat{color:var(--heat)}
+    .segs button:disabled{opacity:.35;cursor:not-allowed}
+    .segs button:focus-visible,.sw:focus-visible{outline:2px solid var(--house);outline-offset:2px}
+
+    .moderow{display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:12px}
+    .moderow .t{font-size:15px}
+    .moderow .d{font-size:12px;color:var(--muted)}
+    .sw{position:relative;width:50px;height:30px;border-radius:999px;border:0;background:var(--idle);cursor:pointer;flex:none;transition:background .2s}
+    .sw::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;transition:left .2s;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+    .sw[aria-checked="true"]{background:var(--ok)}
+    .sw[aria-checked="true"]::after{left:23px}
+    .manualwarn{margin-top:8px;font-size:12px;color:var(--heat)}
+
+    /* footer strip */
+    .foot{display:flex;justify-content:flex-end;font-size:13px}
+    .foot a{color:var(--house);text-decoration:none}
+    .foot a:hover{text-decoration:underline}
+    [hidden]{display:none!important}
+  </style>
 </head>
 <body>
-  <div class="row">
-    <span id="conn" class="pill err" hidden></span>
+<div class="wrap" id="app">
+  <header>
+    <span class="age num" id="age" hidden></span>
+  </header>
+  <div class="banner" id="banner" hidden></div>
+
+  <svg class="flow" viewBox="0 0 360 316" role="img" aria-label="Tok energie mezi panely, baterií, domem a boilerem">
+    <defs>
+      <linearGradient id="tank" x1="0" y1="0" x2="0" y2="1">
+        <stop id="g_top" offset="0" stop-color="#9aa39d"/>
+        <stop id="g_bot" offset="1" stop-color="#9aa39d"/>
+      </linearGradient>
+    </defs>
+    <!-- wires: grey track plus a coloured dashed overlay that runs while power flows -->
+    <path class="wire" d="M180 58 L180 88"/>
+    <path class="wire" d="M160 126 L76 170"/>
+    <path class="wire" d="M200 126 L284 170"/>
+    <path class="wire" d="M180 136 L180 186"/>
+    <path class="cur" id="c_pv" d="M180 58 L180 88" style="stroke:var(--pv)"/>
+    <path class="cur" id="c_bat" d="M160 126 L76 170" style="stroke:var(--bat)"/>
+    <path class="cur" id="c_home" d="M200 126 L284 170" style="stroke:var(--house)"/>
+    <path class="cur" id="c_boil" d="M180 136 L180 186" style="stroke:var(--heat)"/>
+
+    <!-- inverter: ring gauge of the load percentage -->
+    <circle class="node" cx="180" cy="112" r="24" style="stroke:var(--seg)"/>
+    <circle id="inv_arc" cx="180" cy="112" r="24" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round" transform="rotate(-90 180 112)" stroke-dasharray="0 150.8"/>
+    <text class="pct" x="180" y="117" text-anchor="middle" id="v_lp">—</text>
+    <text class="lbl" x="212" y="116">měnič</text>
+
+    <!-- PV -->
+    <circle class="node" cx="180" cy="36" r="22" style="stroke:var(--pv)"/>
+    <g class="icon" style="stroke:var(--pv)" transform="translate(180 36)">
+      <circle r="6"/>
+      <path d="M0 -12v-3M0 12v3M-12 0h-3M12 0h3M-8.5 -8.5l-2 -2M8.5 8.5l2 2M-8.5 8.5l-2 2M8.5 -8.5l2 2"/>
+    </g>
+    <text class="lbl" x="212" y="30">panely</text>
+    <text class="val" x="212" y="50" id="v_pv">—</text>
+
+    <!-- battery -->
+    <circle class="node" cx="62" cy="180" r="22" style="stroke:var(--bat)"/>
+    <g class="icon" style="stroke:var(--bat)" transform="translate(62 180)">
+      <rect x="-11" y="-6" width="20" height="12" rx="2"/>
+      <path d="M11 -2v4"/>
+      <rect id="i_batfill" x="-8" y="-3" width="0" height="6" rx="1" style="fill:var(--bat);stroke:none"/>
+    </g>
+    <text class="lbl" x="62" y="216" text-anchor="middle">baterie</text>
+    <text class="val" x="62" y="236" text-anchor="middle" id="v_bat">—</text>
+
+    <!-- house: total AC output of the inverter -->
+    <circle class="node" cx="298" cy="180" r="22" style="stroke:var(--house)"/>
+    <g class="icon" style="stroke:var(--house)" transform="translate(298 180)">
+      <path d="M-11 0 L0 -10 L11 0"/>
+      <path d="M-8 -2v11h16v-11"/>
+      <path d="M-2 9v-6h4v6"/>
+    </g>
+    <text class="lbl" x="298" y="216" text-anchor="middle">dům</text>
+    <text class="val" x="298" y="236" text-anchor="middle" id="v_home">—</text>
+
+    <!-- boiler tank: top and bottom sensor stacked as in the real tank, fill colour follows temperature -->
+    <rect x="154" y="186" width="52" height="78" rx="11" style="fill:url(#tank)"/>
+    <rect class="node" id="tank_edge" x="154" y="186" width="52" height="78" rx="11" style="fill:none;stroke:var(--idle)"/>
+    <text class="temp" x="180" y="213" text-anchor="middle" id="t_h">—</text>
+    <text class="temp" x="180" y="252" text-anchor="middle" id="t_l">—</text>
+    <text class="lbl" x="180" y="288" text-anchor="middle">boiler</text>
+    <text class="val" x="180" y="308" text-anchor="middle" id="v_boil">—</text>
+  </svg>
+
+  <div class="batt">
+    <div class="bar"><div class="fill" id="b_fill" style="width:0%"></div><div class="guard" id="b_guard" hidden><span id="b_guard_lbl"></span></div></div>
+    <div class="battrow">
+      <span><b class="num" id="b_soc">—</b> · <span id="b_mode">stav neznámý</span></span>
+      <span class="num" id="b_volt"></span>
+    </div>
   </div>
 
-  <div class="grid">
-    <div class="card"><div class="k">Baterie</div><div class="v split"><span id="batt_soc_v">—</span><span id="batt_power_v"></span></div></div>
-    <div class="card"><div class="k">FV</div><div class="v"><span id="pv_power">—</span></div></div>
-    <div class="card"><div class="k">Zátěž</div><div class="v"><span id="load_percent">—</span> %</div></div>
-    <div class="sep"></div>
-    <div class="card"><div class="k">Teplota (H/L)</div><div class="v"><span id="tempH">—</span>/<span id="tempL">—</span> °C</div></div>
-    <div class="card" id="boiler_card"><div class="k split"><span>Boiler</span><span id="boiler_thermo" class="thermo">termostat</span></div><div class="v"><span id="boiler_status">—</span></div><div class="btn-group" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;"><button class="boiler-btn" onclick="setBoiler(0)">OFF</button><button class="boiler-btn" onclick="setBoiler(1)">500W</button><button class="boiler-btn" onclick="setBoiler(2)">1000W</button><button class="boiler-btn" onclick="setBoiler(3)">2000W</button><button id="boiler_mode_btn" class="mode-btn" onclick="toggleBoilerManual()" title="Manual holds the selected power; Auto regulates it from PV surplus and battery discharge">Auto</button></div></div>
-  </div>
+  <section class="sec">
+    <div class="sechead">
+      <h2>Boiler</h2>
+      <span class="thermo" id="thermo">termostat</span>
+    </div>
+    <div class="boilstate">
+      <span class="big num" id="bo_big">—</span>
+      <span class="note" id="bo_note"></span>
+    </div>
+    <div class="segs" role="group" aria-label="Výkon boileru">
+      <button class="boiler-btn" data-p="0" aria-pressed="false" onclick="setBoiler(0)">Vyp</button>
+      <button class="boiler-btn heat" data-p="1" aria-pressed="false" onclick="setBoiler(1)">500</button>
+      <button class="boiler-btn heat" data-p="2" aria-pressed="false" onclick="setBoiler(2)">1000</button>
+      <button class="boiler-btn heat" data-p="3" aria-pressed="false" onclick="setBoiler(3)">2000</button>
+    </div>
+    <div class="moderow">
+      <div><div class="t">Automatická regulace</div><div class="d">výkon podle přebytku z panelů a stavu baterie</div></div>
+      <button class="sw" id="sw_auto" role="switch" aria-checked="true" aria-label="Automatická regulace" onclick="toggleBoilerManual()"></button>
+    </div>
+    <div class="manualwarn" id="manualwarn" hidden>Ručně: drží zvolený výkon, dokud ho nezměníš. Vypne jen termostat, prázdná baterie nebo návrat do Auto.</div>
+  </section>
 
-  <script src="./app.js" defer></script>
-  <div style="margin-top:14px; text-align:center;"><a href="/details.html">details</a></div>
+  <section class="sec">
+    <div class="foot">
+      <a href="/details.html">podrobnosti</a>
+    </div>
+  </section>
+</div>
+<script src="./app.js" defer></script>
 </body>
 </html>
