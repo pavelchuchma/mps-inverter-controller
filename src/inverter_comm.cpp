@@ -355,11 +355,10 @@ static bool parse_qpigs_payload(const String& p) {
     s.bus_voltage = toks[7].toFloat();
     s.batt_voltage = toks[8].toFloat();
     s.batt_charge_current = toks[9].toFloat();
-    s.batt_soc = toks[10].toInt();
+    // toks[10] (battery capacity %), toks[12] (PV input current) and toks[14]
+    // (battery voltage from SCC) are skipped on purpose, see InverterState.
     s.heatsink_temp = toks[11].toFloat();
-    s.pv_input_current_batt = toks[12].toFloat();
     s.pv_input_voltage = toks[13].toFloat();
-    s.batt_voltage_from_scc = toks[14].toFloat();
     s.batt_discharge_current = toks[15].toFloat();
     s.device_status_bits = (uint8_t)(toks[16].toInt() & 0xFF);
     s.batt_fan_offset_10mv = toks[17].toInt();
@@ -393,13 +392,13 @@ static void print_status_and_mode_snapshot() {
     Serial.println("[INV] no data");
   } else {
     Serial.printf("[INV] mode=%c(%s) ACout=%.1fV/%.2fHz VA=%d W=%d load=%d%% "
-                  "BUS=%.1fV batt=%.2fV chg=%.2fA SOC=%d%% heatsink=%.1fC "
-                  "PV=%.1fV/%.2fA dischg=%.2fA dev=0x%02X add=0x%02X\n",
+                  "BUS=%.1fV batt=%.2fV chg=%.2fA heatsink=%.1fC "
+                  "PV=%.1fV/%dW dischg=%.2fA dev=0x%02X add=0x%02X\n",
                   mode_code ? mode_code : '?', mode_name,
                   s.ac_out_voltage, s.ac_out_frequency,
                   s.ac_apparent_va, s.ac_active_w, s.load_percent,
-                  s.bus_voltage, s.batt_voltage, s.batt_charge_current, s.batt_soc,
-                  s.heatsink_temp, s.pv_input_voltage, s.pv_input_current_batt,
+                  s.bus_voltage, s.batt_voltage, s.batt_charge_current,
+                  s.heatsink_temp, s.pv_input_voltage, s.pv_charging_power,
                   s.batt_discharge_current, s.device_status_bits, s.additional_status_bits);
   }
 }

@@ -133,14 +133,12 @@ function render() {
     row("Proud baterie (CAN)", num(j.cbc, 1, " A"), CAN, !can),
     row("Nabíjecí proud dle měniče", num(j.bca, 0, " A"), INV, !inv),
     row("Vybíjecí proud dle měniče", num(j.bda, 0, " A"), INV, !inv),
-    row("PV proud do baterie", num(j.pi, 0, " A"), INV, !inv),
   ]);
 
   fill("voltage", [
     row("Napětí baterie (konzole)", num(j.bv, 2, " V"), CON, !bat),
     row("Napětí baterie (CAN)", num(j.cbv, 2, " V"), CAN, !can),
     row("Napětí baterie dle měniče", num(j.ibv, 2, " V"), INV, !inv),
-    row("Napětí baterie dle SCC", num(j.bvs, 2, " V"), INV, !inv),
     row("Požadované nabíjecí napětí (BMS)", num(j.chv, 1, " V"), CAN, !can),
     row("PV vstupní napětí", num(j.piv, 1, " V"), INV, !inv),
     row("AC výstupní napětí", num(j.av, 1, " V"), INV, !inv),
@@ -150,7 +148,6 @@ function render() {
   fill("soc", [
     row("SoC (konzole)", num(j.bs, 0, " %"), CON, !bat),
     row("SoC (CAN)", num(cd.soc, 0, " %"), CAN, !can),
-    row("SoC dle měniče", num(j.ibs, 0, " %"), INV, !inv),
     row("SoH (BMS)", num(j.soh, 0, " %"), CAN, !can),
     row("Režim baterie", bat && j.bm ? j.bm : "—", CON, !bat),
     row("Režim měniče (QMOD)", mode, INV, !inv),

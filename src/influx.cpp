@@ -87,11 +87,8 @@ static void append_sample(String& buf, time_t ts, bool on_grid) {
     appendInt(line, first, "load_pct", s.load_percent);
     appendFloat(line, first, "batt_v", s.batt_voltage);
     appendFloat(line, first, "batt_chg_a", s.batt_charge_current);
-    appendInt(line, first, "soc", s.batt_soc);
     appendFloat(line, first, "heatsink_c", s.heatsink_temp);
-    appendFloat(line, first, "pv_a", s.pv_input_current_batt);
     appendFloat(line, first, "pv_v", s.pv_input_voltage);
-    appendFloat(line, first, "batt_v_scc", s.batt_voltage_from_scc);
     appendFloat(line, first, "batt_dischg_a", s.batt_discharge_current);
     appendInt(line, first, "pv_w", s.pv_charging_power);
     char mode_code = '\0';

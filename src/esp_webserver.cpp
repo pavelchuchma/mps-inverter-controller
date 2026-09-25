@@ -123,12 +123,9 @@ static String makeStatusJson(bool full) {
   doc["av"]  = s.ac_out_voltage;
   doc["ava"] = s.ac_apparent_va;
   doc["ht"]  = s.heatsink_temp;
-  doc["pi"]  = s.pv_input_current_batt;
   doc["piv"] = s.pv_input_voltage;
   // The inverter's own view of the battery, next to the console's above.
   doc["ibv"] = s.batt_voltage;
-  doc["bvs"] = s.batt_voltage_from_scc;
-  doc["ibs"] = s.batt_soc;
   doc["bca"] = s.batt_charge_current;
   doc["bda"] = s.batt_discharge_current;
   // QPIGS status bits, raw and decoded. `lo` = b4 "load status": the inverter's own

@@ -37,11 +37,13 @@ struct InverterState {
   float bus_voltage;            // III    BUS voltage [V]
   float batt_voltage;           // JJ.JJ  Battery voltage [V]
   float batt_charge_current;    // KKK    Battery charging current [A]
-  int   batt_soc;               // OOO    Battery capacity [%]
+  // OOO (battery capacity %), EEEE (PV input current for battery) and WW.WW
+  // (battery voltage from SCC) are not kept: this unit reports a
+  // voltage-derived guess for the first and a constant 0 for the other two
+  // (never non-zero since 2026-06). The BMS SoC over CAN / console is the real
+  // one, and PV power comes from MMMMM below.
   float heatsink_temp;          // TTTT   Inverter heat sink temperature [°C] (or NTC A/D)
-  float pv_input_current_batt;  // EEEE   PV input current for battery [A]
   float pv_input_voltage;       // UUU.U  PV input voltage [V]
-  float batt_voltage_from_scc;  // WW.WW  Battery voltage from SCC [V]
   float batt_discharge_current; // PPPPP  Battery discharge current [A]
   uint8_t device_status_bits;   // b7..b0 Device status bits (b7 SBU, b6 config changed, b5 SCC fw, b4 load status, b3 reserved, b2 charging status, b1 SCC charging, b0 AC charging)
   int   batt_fan_offset_10mv;   // QQ     Battery voltage offset for fans on (10mV units)

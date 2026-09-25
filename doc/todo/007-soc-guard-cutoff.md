@@ -137,11 +137,11 @@ Build: `pio run` passes (flash 87.3 %, RAM 16.2 %).
    §5.15.) Note: `/inv_config` right after a write returned an empty QPIRI
    twice — the inverter seems to need a moment after an EEPROM write — the
    guard's verification reads the 5-minute poll, so this does not affect it.
-2. **Does the output restart on its own after a "battery low" shutdown once
-   the cut-off is lowered again?** Assumed yes (it restarts today after the
-   morning charge lifts the pack above 46 V); nobody has watched the
-   lower-the-threshold path yet. If it needs a manual reset, the guard is
-   useless and the fallback is an AC contactor driven by a spare relay.
+2. ~~**Does the output restart on its own after a "battery low" shutdown once
+   the cut-off is lowered again?**~~ **Answered 2026-09-24, and the answer is
+   no** — see "First real trip" under Resolution. The inverter does not merely
+   drop the output: off-grid at night it shuts down completely, and the dawn
+   restart tripped the BMS. The AC-contactor fallback is back on the table.
 3. **Whether 15 / 25 are the final numbers.** With the boiler already shed at
    70 % the cottage's own draw is ~10 %/night (006), so 15 % leaves roughly one
    more night than the 46 V LVD (~5 %). Keeping 15 % unused costs that night
@@ -167,4 +167,76 @@ Build: `pio run` passes (flash 87.3 %, RAM 16.2 %).
 
 ## Resolution
 
-_Not resolved yet._
+_Not resolved yet._ The guard itself works as designed; the mechanism it relies
+on (the inverter's LVD) does not. Findings from the first real trip below.
+
+### First real trip, 2026-09-24 — inverter shut down for the night, BMS tripped at dawn
+
+Test: boiler 2 kW in manual from 00:20 CEST, −44 A, SoC 92 → 15 %. The pack
+had never been below 50 % since the installation, so this was the first time
+the inverter ever reached its low DC cut-off. Sources: `app.log`, InfluxDB
+`chajda-inverter`, `chajda-inverter-config`, `chajda-battery-can`,
+`chajda-battery`. Times CEST.
+
+| Time | Event |
+| --- | --- |
+| 02:04:59 | `SoC guard: armed at 15 %, PSDV48.0 -> ACK` (pack 47.4 V under load) |
+| 02:05:02 | AC output off (`boiler input off`) — the intended part |
+| 02:05:21 | Last inverter reply: mode `D`, batt 48.0 V. Then **silence for 4 h 19 min**: no QPIGS, no QPIRI. The unit powered itself off; pack rested at 48.8 V, 0 A, DFET on |
+| 06:24:32 | Dawn, PV 135 V / 20 W: inverter wakes in mode `S`, reports batt 48.8 V |
+| 06:24:41 | **BMS protection 0x0000 → 0x0080** (0x359 byte 0 bit 7, *discharge over current*), `dchg 0`, DCL 0 A — 9 s after the wake-up |
+| 06:25:43 / 06:25:55 | BMS re-enables discharge after 62 s, trips again 12 s later |
+| 06:26:57 / 06:27:09 | Third attempt, trips again and **stays tripped** (latched) until the power cycle |
+| 06:27:14 | Inverter sees 26.4 V on its battery terminals, then goes silent again for 13 min |
+| 06:40–08:39 | Inverter alive on PV only: cycles `P`/`S`/`B` (repeated reboots on a few tens of watts), batt_v 0 — the "Battery open" fault on the LCD |
+| 08:39:56 | On site: battery switched off (CAN + RS485 down) |
+| 08:41:09 | Panels disconnected; the inverter answers 10 s more, then dies |
+| 08:41:30 | Battery on: protection 0x0000, DFET on, SoC 15 % |
+| 08:41:39–08:42:00 | Inverter boots from the battery: `P` → `S` → **`D` again** — LVD is still 48.0 V (armed), pack 48.9 V |
+| 08:42:29 | Panels back: `S`, charging 3 → 19 A; 08:43:40 mode `B`, output up |
+| 09:20:44 | `SoC guard: disarmed at 25 %, PSDV46.0 -> ACK`, QPIRI confirms 46.0 at 09:23 |
+
+What it means:
+
+- **The BMS did not trip on SoC or voltage.** 48.8 V is 3.05 V per cell; an
+  under-voltage would be bit 2, a low-SoC cut would not arrive four hours after
+  15 % and would not clear after 62 s. Bit 7 is the vendor's *discharge over
+  current* (the table in `battery_can_spec.md` stops at bit 6 — to be added).
+  The trips line up with the inverter reconnecting the battery from a cold
+  state: the unit had been fully off, its DC bus discharged, and it woke on a
+  20 W PV trickle. The CAN telemetry (10 s samples, min −0.6 A) cannot see a
+  millisecond inrush, so this is inferred from the timing, but whatever the
+  waveform was, the BMS's diagnosis was over-current, not empty battery.
+- **Why only a full power cycle helped.** The third trip latches; only
+  switching the battery off clears it, and the Pylontech power-on sequence
+  pre-charges the inverter (soft start), which the automatic retry does not.
+  The inverter stayed alive on PV in the fault state and did not retry by
+  itself. And with the guard armed (LVD 48.0 V) a battery-only boot goes
+  straight back to `D` (seen at 08:41:59): the unit came up only once the
+  panels were reconnected.
+- **The design assumption was wrong.** "The output goes off with fault 04, the
+  PV charger keeps working" holds by day only. Off-grid at night the inverter
+  has no source it accepts once the battery is under the cut-off, so it shuts
+  down entirely (mode `D`, RS232 dead). Open question 2 is answered: it does
+  not come back on its own, and the dawn restart is what tripped the BMS.
+- **Not specific to 15 %.** Any night-time LVD trip does the same, including
+  the original 46 V one; it simply never happened before. The guard did not
+  introduce the failure, it caused the first occurrence.
+- The ESP and the guard behaved exactly as specified throughout (edge writes,
+  ACKs, verification, disarm at 25 %).
+
+Data-quality notes: mode `D` is not in the QMOD table of
+`ps_rs232_protocol_FULL_ai_ready.txt` (presumably "shutdown"); the
+`chajda-inverter` series has gaps 02:05–06:24 and 06:27–06:40 because the
+RS232 died with the unit; the RS485 `power_events` word flashed 0x08000000,
+0x00800000 and 0x00010000 at the three trips (bits not decoded).
+
+Next steps to decide:
+
+1. Stop using the LVD as the shedding mechanism. Drop AC loads with a contactor
+   on a spare relay instead, so the inverter never enters `D` (the fallback
+   named in open question 2).
+2. If the LVD stays: alert on `protection != 0` and on inverter silence longer
+   than a minute, since both went unnoticed until the morning.
+3. Docs: add bit 7 to the `0x359` table in `battery_can_spec.md`, and `D` to the
+   QMOD list.

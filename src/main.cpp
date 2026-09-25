@@ -409,8 +409,7 @@ static void refresh_inverter_status() {
   if (!g_inverter_data_valid) {
     display_set_row(ROW_PV_POWER, "PV: --");
   } else {
-    int pv_w = (int)(s.pv_input_current_batt * s.pv_input_voltage);
-    snprintf(buf, sizeof(buf), "PV: %dW", pv_w);
+    snprintf(buf, sizeof(buf), "PV: %dW", s.pv_charging_power);
     display_set_row(ROW_PV_POWER, buf);
   }
   display_redraw();

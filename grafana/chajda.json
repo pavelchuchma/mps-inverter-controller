@@ -293,7 +293,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "I: Batt discharge current"
+                "value": "I: Batt discharge current (negated)"
               },
               {
                 "id": "color",
@@ -301,18 +301,6 @@
                   "fixedColor": "red",
                   "mode": "fixed"
                 }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "C"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "I: PV input current (battery)"
               }
             ]
           },
@@ -398,16 +386,8 @@
             "type": "influxdb",
             "uid": "P951FEA4DE68E13C5"
           },
-          "query": "from(bucket: \"metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"chajda-inverter\")\n  |> filter(fn: (r) => r[\"_field\"] == \"batt_dischg_a\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: true)",
+          "query": "from(bucket: \"metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"chajda-inverter\")\n  |> filter(fn: (r) => r[\"_field\"] == \"batt_dischg_a\")\n  |> map(fn: (r) => ({ r with _value: -r._value }))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: true)",
           "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "P951FEA4DE68E13C5"
-          },
-          "query": "from(bucket: \"metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"chajda-inverter\")\n  |> filter(fn: (r) => r[\"_field\"] == \"pv_a\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: true)",
-          "refId": "C"
         }
       ],
       "title": "Baterie – proud",
@@ -843,18 +823,6 @@
           {
             "matcher": {
               "id": "byFrameRefID",
-              "options": "A"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "I: Batt SoC"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byFrameRefID",
               "options": "B"
             },
             "properties": [
@@ -900,14 +868,6 @@
           },
           "query": "from(bucket: \"metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"chajda-battery\")\n  |> filter(fn: (r) => r[\"_field\"] == \"soc\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: true)",
           "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "P951FEA4DE68E13C5"
-          },
-          "query": "from(bucket: \"metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"chajda-inverter\")\n  |> filter(fn: (r) => r[\"_field\"] == \"soc\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: true)",
-          "refId": "A"
         }
       ],
       "title": "Batt SoC",
@@ -982,18 +942,6 @@
               {
                 "id": "displayName",
                 "value": "I: Batt voltage"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "B"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "I: Batt voltage from SCC"
               }
             ]
           },
@@ -1083,14 +1031,6 @@
           },
           "query": "from(bucket: \"metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"chajda-inverter\")\n  |> filter(fn: (r) => r[\"_field\"] == \"batt_v\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: true)",
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "P951FEA4DE68E13C5"
-          },
-          "query": "from(bucket: \"metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"chajda-inverter\")\n  |> filter(fn: (r) => r[\"_field\"] == \"batt_v_scc\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: true)",
-          "refId": "B"
         },
         {
           "datasource": {
@@ -1821,6 +1761,7 @@
         "type": "influxdb",
         "uid": "P951FEA4DE68E13C5"
       },
+      "description": "BMS charge and discharge current limits from the CAN broadcast, against the current actually flowing and the SoC. DCL is drawn negative, on the discharge side of the current, and drops to 0 when the BMS blocks discharge (protection tripped).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1887,15 +1828,29 @@
                 "value": "CAN: Charge current limit (CCL)"
               },
               {
+                "id": "custom.lineWidth",
+                "value": 3
+              },
+              {
                 "id": "color",
                 "value": {
-                  "fixedColor": "green",
+                  "fixedColor": "red",
                   "mode": "fixed"
                 }
               },
               {
-                "id": "custom.lineWidth",
-                "value": 3
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    10,
+                    10
+                  ],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
               }
             ]
           },
@@ -1935,6 +1890,43 @@
                   "fixedColor": "purple",
                   "mode": "fixed"
                 }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "D"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "CAN: Discharge current limit (DCL, negated)"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    2,
+                    6
+                  ],
+                  "fill": "dot"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
               }
             ]
           }
@@ -1990,9 +1982,17 @@
           },
           "query": "from(bucket: \"metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"chajda-battery-can\")\n  |> filter(fn: (r) => r[\"_field\"] == \"soc\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: true)",
           "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "P951FEA4DE68E13C5"
+          },
+          "query": "from(bucket: \"metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"chajda-battery-can\")\n  |> filter(fn: (r) => r[\"_field\"] == \"dcl_a\")\n  |> map(fn: (r) => ({ r with _value: -r._value }))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: true)",
+          "refId": "D"
         }
       ],
-      "title": "CCL vs. proud a SoC",
+      "title": "CCL / DCL vs. proud a SoC",
       "type": "timeseries"
     },
     {
@@ -2155,7 +2155,7 @@
         "type": "influxdb",
         "uid": "P951FEA4DE68E13C5"
       },
-      "description": "Inverter max charge current (a setting, stepped) against the BMS charge current limit and the current actually flowing. The lower of the two limits is the one in force.",
+      "description": "Inverter max charge current (a setting, stepped) against the BMS charge current limit and the current actually flowing. The lower of the two limits is the one in force. The BMS discharge limit is drawn too, negated so it sits on the discharge side of the current; a discharge block shows as DCL 0.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2298,6 +2298,43 @@
                 "value": 2
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "D"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "CAN: Discharge current limit (DCL, negated)"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    2,
+                    6
+                  ],
+                  "fill": "dot"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
           }
         ]
       },
@@ -2351,6 +2388,14 @@
           },
           "query": "from(bucket: \"metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"chajda-battery-can\")\n  |> filter(fn: (r) => r[\"_field\"] == \"current_a\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: true)",
           "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "P951FEA4DE68E13C5"
+          },
+          "query": "from(bucket: \"metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"chajda-battery-can\")\n  |> filter(fn: (r) => r[\"_field\"] == \"dcl_a\")\n  |> map(fn: (r) => ({ r with _value: -r._value }))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: true)",
+          "refId": "D"
         }
       ],
       "title": "Limity nabíjení: měnič vs. BMS",
@@ -2902,6 +2947,7 @@
         "type": "influxdb",
         "uid": "P951FEA4DE68E13C5"
       },
+      "description": "0x35C request flags, the 0x359 protection and alarm words (raw, 0 = none; 128 = discharge over current) and the CAN link state.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3009,6 +3055,82 @@
                 "value": 120000
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "G"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "protection"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "0": {
+                        "color": "green",
+                        "index": 0,
+                        "text": "none"
+                      }
+                    },
+                    "type": "value"
+                  },
+                  {
+                    "options": {
+                      "from": 1,
+                      "result": {
+                        "color": "red",
+                        "index": 1
+                      },
+                      "to": 65535
+                    },
+                    "type": "range"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "H"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "alarm"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "0": {
+                        "color": "green",
+                        "index": 0,
+                        "text": "none"
+                      }
+                    },
+                    "type": "value"
+                  },
+                  {
+                    "options": {
+                      "from": 1,
+                      "result": {
+                        "color": "red",
+                        "index": 1
+                      },
+                      "to": 65535
+                    },
+                    "type": "range"
+                  }
+                ]
+              }
+            ]
           }
         ]
       },
@@ -3087,11 +3209,27 @@
             "type": "influxdb",
             "uid": "P951FEA4DE68E13C5"
           },
+          "query": "from(bucket: \"metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"chajda-battery-can\")\n  |> filter(fn: (r) => r[\"_field\"] == \"protection\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: true)",
+          "refId": "G"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "P951FEA4DE68E13C5"
+          },
+          "query": "from(bucket: \"metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"chajda-battery-can\")\n  |> filter(fn: (r) => r[\"_field\"] == \"alarm\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: true)",
+          "refId": "H"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "P951FEA4DE68E13C5"
+          },
           "query": "from(bucket: \"metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"chajda-can-link\")\n  |> filter(fn: (r) => r[\"_field\"] == \"valid\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: true)",
           "refId": "F"
         }
       ],
-      "title": "BMS flagy / CAN link",
+      "title": "BMS flagy / ochrany / CAN link",
       "type": "state-timeline"
     },
     {
@@ -3628,5 +3766,5 @@
   "timezone": "browser",
   "title": "chajda",
   "uid": "chajda",
-  "version": 34
+  "version": 39
 }
