@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Inverter settings</title>
+  <title>Chajda - nastavení</title>
   <link rel="stylesheet" href="./style.css">
   <style>
     h2{margin:0 0 12px;font-size:20px;}
@@ -59,6 +59,17 @@
     Při SoC z BMS ≤ <span id="sg-arm">?</span> % přepne ESP program 29 (LVD) na 48.0 V,
     měnič vypne výstup. Při SoC ≥ <span id="sg-dis">?</span> % vrátí 46.0 V.
     Mezi tím běží výstup jen z PV.
+  </div>
+
+  <h2 style="margin-top:24px;">Automatická regulace boileru</h2>
+  <div class="toolbar">
+    <span id="bm-status" class="pill">…</span>
+    <button id="bm-toggle" disabled>…</button>
+  </div>
+  <div class="muted">
+    Zapnuto: výkon boileru podle přebytku z panelů a stavu baterie.
+    Vypnuto (ruční režim): drží výkon zvolený na hlavní stránce, dokud ho nezměníš.
+    Vypne ho jen termostat, prázdná baterie nebo zapnutí regulace.
   </div>
 
   <h2 style="margin-top:24px;">Stav a varování měniče</h2>

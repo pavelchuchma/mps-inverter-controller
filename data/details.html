@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Inverter details</title>
+  <title>Chajda - detaily</title>
   <link rel="stylesheet" href="./style.css">
   <style>
     body{max-width:640px;margin:0 auto;}
@@ -28,6 +28,7 @@
   <div class="toolbar">
     <a href="/">← zpět</a>
     <a href="/settings.html">settings</a>
+    <a href="/app.log">app.log</a>
     <span id="conn" class="pill err" hidden></span>
   </div>
 
@@ -63,7 +64,7 @@
 
   <div class="muted" style="margin-top:14px;">Log:</div>
   <pre id="log">—</pre>
-  <div style="margin-top:8px; text-align:center;"><a href="/app.log">app.log</a> <button onclick="clearLog()" style="margin-left:8px;">clear log</button> <button onclick="restartDevice()" style="margin-left:8px;">restart</button></div>
+  <div style="margin-top:8px; text-align:center;"><button onclick="clearLog()">clear log</button> <button onclick="restartDevice()" style="margin-left:8px;">restart</button></div>
 
   <script src="./details.js" defer></script>
 </body>

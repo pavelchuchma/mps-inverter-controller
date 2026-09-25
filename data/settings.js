@@ -421,6 +421,40 @@ function renderGuard(j) {
   status.className = "pill" + (cls ? " " + cls : "");
   btn.textContent = sgEnabled ? "Vypnout guard" : "Zapnout guard";
   btn.disabled = false;
+  renderBoilerMode(j);
+}
+
+// ---- Boiler automatic control (bman in /status: true = Manual, false = Auto) ----
+// Not gated on the thermostat: Manual + OFF must be selectable while it is open.
+let boilerManual = false;
+
+function renderBoilerMode(j) {
+  if (j.bman === undefined) return;
+  boilerManual = !!j.bman;
+  const status = document.getElementById("bm-status");
+  const btn = document.getElementById("bm-toggle");
+  status.textContent = boilerManual ? "Vypnuto — ruční režim" : "Zapnuto";
+  status.className = "pill" + (boilerManual ? " err" : " ok");
+  btn.textContent = boilerManual ? "Zapnout regulaci" : "Vypnout (ručně)";
+  btn.disabled = false;
+}
+
+async function toggleBoilerManual() {
+  const on = !boilerManual;
+  if (on && !confirm("Přepnout boiler na ruční režim? Zvolený výkon se drží, dokud ho nezměníš, bez automatické regulace. Ukončí ho jen termostat, prázdná baterie nebo zapnutí regulace.")) return;
+  const btn = document.getElementById("bm-toggle");
+  btn.disabled = true;
+  try {
+    const resp = await fetch("/cmd", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "cmd", name: "set_boiler_manual", value: on ? 1 : 0 }),
+    });
+    if (!resp.ok) alert("HTTP chyba " + resp.status);
+  } catch (e) {
+    alert("Chyba: " + e);
+  }
+  await loadGuard();
 }
 
 async function loadGuard() {
@@ -457,4 +491,5 @@ async function toggleGuard() {
 document.getElementById("refresh").addEventListener("click", () => { load(); loadGuard(); });
 document.getElementById("update").addEventListener("click", doUpdate);
 document.getElementById("sg-toggle").addEventListener("click", toggleGuard);
+document.getElementById("bm-toggle").addEventListener("click", toggleBoilerManual);
 window.addEventListener("DOMContentLoaded", () => { load(); loadGuard(); });

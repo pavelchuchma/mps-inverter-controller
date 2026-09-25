@@ -66,18 +66,10 @@ let boilerFault = false;
 let boilerInputOn = true; // start enabled; updated from j.bo on first /status
 let boilerManual = false; // updated from j.bman on each /status
 const boilerLabels = ["Vyp", "500 W", "1000 W", "2000 W"];
+const boilerWatts = [0, 500, 1000, 2000];
 
 async function setBoiler(level) {
   await send({ type: "cmd", name: "set_boiler", value: level });
-  await fetchStatus();
-}
-
-// Toggle Manual/Auto. Not gated on the boiler input like the power buttons:
-// Manual + OFF must be selectable while the thermostat is open.
-async function toggleBoilerManual() {
-  const on = !boilerManual;
-  if (on && !confirm("Přepnout boiler na ruční režim? Zvolený výkon se drží, dokud ho nezměníš, bez automatické regulace. Ukončí ho jen termostat, prázdná baterie nebo návrat do Auto.")) return;
-  await send({ type: "cmd", name: "set_boiler_manual", value: on ? 1 : 0 });
   await fetchStatus();
 }
 
@@ -188,7 +180,6 @@ function render(j) {
   $("thermo").classList.toggle("on", boilerInputOn);
 
   if (j.bman !== undefined) boilerManual = !!j.bman;
-  $("sw_auto").setAttribute("aria-checked", String(!boilerManual));
   $("manualwarn").hidden = !boilerManual;
 
   const newFault = !!j.bf;
@@ -216,7 +207,7 @@ function render(j) {
   }
   $("c_boil").classList.toggle("on", valid && heating);
   $("tank_edge").style.stroke = heating ? "var(--heat)" : "var(--idle)";
-  $("v_boil").textContent = boilerFault ? "porucha" : heating ? label : "vyp";
+  $("v_boil").textContent = boilerFault ? "porucha" : formatPower(heating ? boilerWatts[boilerPower] : 0, false);
   $("v_boil").classList.toggle("heat", heating);
 
   const btnsDisabled = boilerFault || !boilerInputOn;
