@@ -513,7 +513,7 @@
         "type": "influxdb",
         "uid": "P951FEA4DE68E13C5"
       },
-      "description": "Tank temperatures (left axis) and the power the boiler is switched to (right axis, kW, stepped).",
+      "description": "Tank temperatures and the target temperature (left axis) and the power the boiler is switched to (right axis, kW, stepped).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -641,6 +641,47 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "D"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Target temp"
+              },
+              {
+                "id": "custom.lineInterpolation",
+                "value": "stepAfter"
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    10,
+                    10
+                  ],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
           }
         ]
       },
@@ -694,6 +735,14 @@
           },
           "query": "from(bucket: \"metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"chajda-boiler\")\n  |> filter(fn: (r) => r[\"_field\"] == \"power_w\")\n  |> map(fn: (r) => ({ r with _value: float(v: r._value) / 1000.0 }))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: true)",
           "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "P951FEA4DE68E13C5"
+          },
+          "query": "from(bucket: \"metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"chajda-boiler\")\n  |> filter(fn: (r) => r[\"_field\"] == \"target_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: true)",
+          "refId": "D"
         }
       ],
       "title": "Boiler",
@@ -1607,6 +1656,18 @@
           {
             "matcher": {
               "id": "byFrameRefID",
+              "options": "E"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Boiler target reached"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
               "options": "D"
             },
             "properties": [
@@ -1677,11 +1738,19 @@
             "type": "influxdb",
             "uid": "P951FEA4DE68E13C5"
           },
+          "query": "from(bucket: \"metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"chajda-boiler\")\n  |> filter(fn: (r) => r[\"_field\"] == \"target_reached\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: true)",
+          "refId": "E"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "P951FEA4DE68E13C5"
+          },
           "query": "from(bucket: \"metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"chajda-soc-guard\")\n  |> filter(fn: (r) => r[\"_field\"] == \"armed\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: true)",
           "refId": "D"
         }
       ],
-      "title": "Boiler input / fault / manual / SoC guard",
+      "title": "Boiler input / fault / manual / target / SoC guard",
       "type": "state-timeline"
     },
     {
@@ -3707,5 +3776,5 @@
   "timezone": "browser",
   "title": "chajda",
   "uid": "chajda",
-  "version": 40
+  "version": 41
 }
