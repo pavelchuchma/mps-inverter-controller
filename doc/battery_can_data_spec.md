@@ -276,18 +276,27 @@ its history once already.
 [CAN] 0x351 dlc=8 raw 10 02 C8 00 E8 03 C2 01  CVL 52.8 V  CCL 20.0 A  DCL 100.0 A
 ```
 
-**A 20-minute health line into `app.log`** (`CAN_LOG_INTERVAL_MS`). Deltas, not
-running totals: reading a day at once, what matters is the rate. 72 lines a day
-at ~150 B is ~10 kB, well inside the 100 kB rotation.
+**A 20-minute health check, warning only** (`CAN_LOG_INTERVAL_MS`). Every 20
+minutes the frame count since the last check is compared with what the pack's
+cadence should have delivered (`CAN_EXPECTED_FRAMES_PER_MIN`, 180: six
+identifiers per 2 s burst). A healthy interval writes nothing — the link has
+been reliable since bring-up, and the earlier unconditional info line was 72
+lines a day burying the transitions worth reading. A warning goes to `app.log`
+when more than `CAN_LOSS_WARN_RATIO` (10 %) of the expected frames are
+missing, or when the driver dropped any frame from a full receive queue
+(`rx_missed`). Bus errors alone do not warn: the controller sees and recovers
+from them, and `err +58` over 3600 frames delivered every burst. Deltas, not
+running totals: reading a day at once, what matters is the rate.
 
 ```
-[CAN] rx +3600 (180/min) err +12 missed 0 recov 0 | 50.29 V +2.9 A 18.3 C
+[CAN] lost 23 % of frames: rx +2770 (139/min, expected 180/min) err +412 missed +0
+      REC 0 TEC 0 recov 0 tx_fail 0 | 50.29 V +2.9 A 18.3 C
       SoC 89 % SoH 100 % CCL 20.0 A DCL 100.0 A prot 0x0000 alarm 0x0000 flags 0xC0
 ```
 
-When the link is down the decoded half is replaced by the age of the last frame,
-because publishing stale values next to a dead link is the same mistake `/can`
-made by printing zeros.
+When the link is down the check always warns, and the decoded half is replaced
+by the age of the last frame, because publishing stale values next to a dead
+link is the same mistake `/can` made by printing zeros.
 
 ## Storage tiers
 

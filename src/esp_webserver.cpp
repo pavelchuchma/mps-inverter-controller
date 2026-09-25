@@ -221,6 +221,20 @@ static String makeErrJson(const char* code, const char* msg) {
   return out;
 }
 
+// --------- Audit trail ----------
+// Every change made through the web UI (a setting, an inverter write, a reboot,
+// a log clear, a file upload) lands in app.log with the address of the client
+// that made it, so a surprising state read back later can be traced to who
+// did it and when. One helper, so the line shape stays uniform: grep "[AUDIT]".
+static void auditLog(const char* fmt, ...) {
+  char what[200];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(what, sizeof(what), fmt, ap);
+  va_end(ap);
+  printInfo("[AUDIT] %s from %s", what, server.client().remoteIP().toString().c_str());
+}
+
 // --------- Command handling ----------
 static String handleCommand(JsonDocument& doc) {
   // Expected: { "type":"cmd", "name":"...", "value": ... }
@@ -237,7 +251,7 @@ static String handleCommand(JsonDocument& doc) {
     }
     setBoilerPower((BoilerPower)val);
     const char* labels[] = {"OFF (0W)", "500W", "1000W", "2000W"};
-    Serial.printf("[CMD] set_boiler: %s\n", labels[val]);
+    auditLog("boiler power set to %s", labels[val]);
     char msg[32];
     snprintf(msg, sizeof(msg), "Boiler %s", labels[val]);
     return makeAckJson(msg);
@@ -246,7 +260,7 @@ static String handleCommand(JsonDocument& doc) {
   if (strcmp(name, "set_boiler_manual") == 0) {
     bool on = doc["value"].as<int>() != 0;
     setBoilerManual(on);
-    Serial.printf("[CMD] set_boiler_manual: %s\n", on ? "Manual" : "Auto");
+    auditLog("boiler mode set to %s", on ? "Manual" : "Auto");
     return makeAckJson(on ? "Boiler mode Manual" : "Boiler mode Auto");
   }
 
@@ -256,7 +270,7 @@ static String handleCommand(JsonDocument& doc) {
         !setBoilerTargetTemp((uint8_t)val)) {
       return makeErrJson("bad_value", "target temperature must be 10..60");
     }
-    Serial.printf("[CMD] set_boiler_target_temp: %d C\n", val);
+    auditLog("boiler target temperature set to %d C", val);
     char msg[32];
     snprintf(msg, sizeof(msg), "Boiler target %d C", val);
     return makeAckJson(msg);
@@ -265,7 +279,7 @@ static String handleCommand(JsonDocument& doc) {
   if (strcmp(name, "set_soc_guard") == 0) {
     bool on = doc["value"].as<int>() != 0;
     soc_guard_set_enabled(on);
-    Serial.printf("[CMD] set_soc_guard: %s\n", on ? "on" : "off");
+    auditLog("SoC guard set to %s", on ? "on" : "off");
     return makeAckJson(on ? "SoC guard on" : "SoC guard off");
   }
 
@@ -276,13 +290,14 @@ static String handleCommand(JsonDocument& doc) {
       return makeErrJson("io_error", "Failed to open /app.log");
     }
     f.close();
-    Serial.println("[CMD] clear_log: /app.log truncated");
+    // Written after the truncation, so it is the first line of the new log:
+    // the history is gone, but who removed it is not.
+    auditLog("app.log cleared");
     return makeAckJson("Log cleared");
   }
 
   if (strcmp(name, "restart") == 0) {
-    printInfo("Restart requested from web UI (%s)",
-              server.client().remoteIP().toString().c_str());
+    auditLog("restart requested");
     pendingRestart = true;
     return makeAckJson("Restarting");
   }
@@ -470,7 +485,9 @@ static void handleInvSet() {
     if (!invSetCmdAllowed(cmd)) {
       r["ok"] = false;
       r["resp"] = "REJECTED";
-      Serial.printf("[INV_SET] rejected: %s\n", cmd.c_str());
+      // A rejected command never reaches the inverter, but somebody sent it
+      // and that is worth the same trace as an accepted one.
+      auditLog("inverter write %s rejected", cmd.c_str());
       continue;
     }
     String resp;
@@ -478,7 +495,7 @@ static void handleInvSet() {
     bool ack = sent && resp == "ACK";
     r["ok"] = ack;
     r["resp"] = sent ? resp : String("NO_RESPONSE");
-    printInfo("Inverter write %s -> %s", cmd.c_str(), ack ? "ACK" : (sent ? resp.c_str() : "NO_RESPONSE"));
+    auditLog("inverter write %s -> %s", cmd.c_str(), ack ? "ACK" : (sent ? resp.c_str() : "NO_RESPONSE"));
   }
 
   String body;
@@ -553,7 +570,7 @@ static void handleUploadData() {
   } else if (upload.status == UPLOAD_FILE_END) {
     if (uploadFile) {
       uploadFile.close();
-      Serial.printf("[UPLOAD] done: %s (%u bytes)\n", upload.filename.c_str(), upload.totalSize);
+      auditLog("file %s uploaded (%u bytes)", upload.filename.c_str(), (unsigned)upload.totalSize);
     }
   }
 }

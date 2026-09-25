@@ -20,14 +20,19 @@
 // Bus health line interval.
 #define CAN_STATUS_INTERVAL_MS 30000
 
-// Periodic health line into app.log, so a day of link behaviour can be read
-// back after the fact. Deltas rather than cumulative totals: what matters when
-// reading a day at once is the rate, not the running count. 72 lines a day at
-// ~150 B is ~10 kB, comfortably inside the 100 kB the log rotates at, and far
-// away from the per-frame writes constraint 4 of the data spec forbids.
-// One health line every 20 minutes: 72 lines a day at ~150 B is ~10 kB, well
-// inside the 100 kB log rotation (doc/battery_can_data_spec.md).
+// Periodic health check of the link, every 20 minutes. It writes to app.log
+// only when something is wrong, as a warning: the link has been reliable since
+// bring-up, and a healthy line every 20 minutes was 72 lines a day of noise
+// that buried the transitions worth reading. Deltas rather than cumulative
+// totals: what matters when reading a day at once is the rate, not the
+// running count.
 #define CAN_LOG_INTERVAL_MS (20UL * 60UL * 1000UL)
+// What a healthy link delivers: six identifiers per burst, a burst every 2 s
+// on this pack (doc/battery_can_data_spec.md), i.e. 180 frames a minute.
+// Fewer than 90 % of that over a check interval means frames are being lost
+// (or the pack has slowed down), and that is the warning's threshold.
+#define CAN_EXPECTED_FRAMES_PER_MIN 180.0f
+#define CAN_LOSS_WARN_RATIO 0.10f
 
 // Tier C event triggers (doc/battery_can_data_spec.md). A change worth seeing
 // at its real time rather than at the next grid point calls influx_log_event(),
@@ -323,6 +328,7 @@ static void pylontech_can_task(void* arg) {
   unsigned long last_log_ms = millis();
   uint32_t last_log_rx = 0;
   uint32_t last_log_err = 0;
+  uint32_t last_log_missed = 0;
 
   unsigned long recover_interval_ms = CAN_RECOVER_MIN_INTERVAL_MS;
   unsigned long last_recover_ms = 0;
@@ -522,28 +528,41 @@ static void pylontech_can_task(void* arg) {
       // currently reacting to something on the wire.
       uint32_t d_rx = link.rx_frames - last_log_rx;
       uint32_t d_err = link.bus_errors - last_log_err;
+      uint32_t d_missed = link.rx_missed - last_log_missed;
       last_log_rx = link.rx_frames;
       last_log_err = link.bus_errors;
+      last_log_missed = link.rx_missed;
       float per_min = elapsed ? (d_rx * 60000.0f / (float)elapsed) : 0.0f;
-      if (is_valid) {
-        printInfo("[CAN] rx +%u (%.0f/min) err +%u REC %u TEC %u missed %u recov %u tx_fail %u | "
-                  "%.2f V %+.1f A %.1f C SoC %d %% SoH %d %% CCL %.1f A DCL %.1f A "
-                  "prot 0x%04X alarm 0x%04X flags 0x%02X",
-                  (unsigned)d_rx, per_min, (unsigned)d_err,
-                  (unsigned)link.rx_err, (unsigned)link.tx_err,
-                  (unsigned)link.rx_missed, (unsigned)link.recoveries,
-                  (unsigned)link.tx_failed,
-                  scratch.voltage_v, scratch.current_a, scratch.temp_c,
-                  scratch.soc, scratch.soh, scratch.ccl_a, scratch.dcl_a,
-                  (unsigned)scratch.protection, (unsigned)scratch.alarm,
-                  scratch.request_flags);
-      } else {
-        printInfo("[CAN] rx +%u err +%u REC %u TEC %u missed %u recov %u tx_fail %u state %d | "
-                  "link down, last frame %lu s ago",
-                  (unsigned)d_rx, (unsigned)d_err,
-                  (unsigned)link.rx_err, (unsigned)link.tx_err, (unsigned)link.rx_missed,
-                  (unsigned)link.recoveries, (unsigned)link.tx_failed, (int)link.state,
-                  link.last_rx_ms ? (unsigned long)((millis() - link.last_rx_ms) / 1000) : 0UL);
+      // Loss against the pack's known cadence. Bus errors alone are not a
+      // problem: the controller sees them and recovers, and a run with err +58
+      // over 3600 frames delivered every burst. Frames the driver dropped from
+      // a full queue (rx_missed) are lost whatever the rate says, so they warn
+      // on their own.
+      float expected = CAN_EXPECTED_FRAMES_PER_MIN * (float)elapsed / 60000.0f;
+      float lost = expected - (float)d_rx;
+      float loss_ratio = expected > 0.0f ? lost / expected : 0.0f;
+      bool losing = loss_ratio > CAN_LOSS_WARN_RATIO || d_missed > 0;
+      if (!is_valid) {
+        printWarning("[CAN] rx +%u err +%u REC %u TEC %u missed %u recov %u tx_fail %u state %d | "
+                     "link down, last frame %lu s ago",
+                     (unsigned)d_rx, (unsigned)d_err,
+                     (unsigned)link.rx_err, (unsigned)link.tx_err, (unsigned)link.rx_missed,
+                     (unsigned)link.recoveries, (unsigned)link.tx_failed, (int)link.state,
+                     link.last_rx_ms ? (unsigned long)((millis() - link.last_rx_ms) / 1000) : 0UL);
+      } else if (losing) {
+        printWarning("[CAN] lost %.0f %% of frames: rx +%u (%.0f/min, expected %.0f/min) "
+                     "err +%u missed +%u REC %u TEC %u recov %u tx_fail %u | "
+                     "%.2f V %+.1f A %.1f C SoC %d %% SoH %d %% CCL %.1f A DCL %.1f A "
+                     "prot 0x%04X alarm 0x%04X flags 0x%02X",
+                     loss_ratio > 0.0f ? loss_ratio * 100.0f : 0.0f,
+                     (unsigned)d_rx, per_min, CAN_EXPECTED_FRAMES_PER_MIN,
+                     (unsigned)d_err, (unsigned)d_missed,
+                     (unsigned)link.rx_err, (unsigned)link.tx_err,
+                     (unsigned)link.recoveries, (unsigned)link.tx_failed,
+                     scratch.voltage_v, scratch.current_a, scratch.temp_c,
+                     scratch.soc, scratch.soh, scratch.ccl_a, scratch.dcl_a,
+                     (unsigned)scratch.protection, (unsigned)scratch.alarm,
+                     scratch.request_flags);
       }
       // Publish the refreshed counters. During normal traffic the burst
       // commit republishes them every ~2 s anyway; this covers a silent bus,
