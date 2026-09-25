@@ -93,6 +93,8 @@ static String makeStatusJson(bool full) {
   doc["bp"]  = (int)getBoilerPower();
   doc["bman"] = isBoilerManual();   // boiler mode: true = Manual, false = Auto
   doc["bo"]  = isBoilerOn();
+  doc["tt"]  = getBoilerTargetTemp();   // virtual thermostat target [°C]
+  doc["tr"]  = isBoilerTargetReached(); // true = tank at target, heating blocked
   doc["bf"]  = isBoilerFault();
   doc["bfr"] = getBoilerFaultReason() ? getBoilerFaultReason() : "";
   // Main page flow diagram: house consumption, inverter mode name and the SoC
@@ -246,6 +248,18 @@ static String handleCommand(JsonDocument& doc) {
     setBoilerManual(on);
     Serial.printf("[CMD] set_boiler_manual: %s\n", on ? "Manual" : "Auto");
     return makeAckJson(on ? "Boiler mode Manual" : "Boiler mode Auto");
+  }
+
+  if (strcmp(name, "set_boiler_target_temp") == 0) {
+    int val = doc["value"].as<int>();
+    if (val < BOILER_TARGET_MIN_C || val > BOILER_TARGET_MAX_C ||
+        !setBoilerTargetTemp((uint8_t)val)) {
+      return makeErrJson("bad_value", "target temperature must be 10..60");
+    }
+    Serial.printf("[CMD] set_boiler_target_temp: %d C\n", val);
+    char msg[32];
+    snprintf(msg, sizeof(msg), "Boiler target %d C", val);
+    return makeAckJson(msg);
   }
 
   if (strcmp(name, "set_soc_guard") == 0) {

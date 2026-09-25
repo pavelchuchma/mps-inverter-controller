@@ -424,8 +424,12 @@ function renderGuard(j) {
   renderBoilerMode(j);
 }
 
-// ---- Boiler automatic control (bman in /status: true = Manual, false = Auto) ----
-// Not gated on the thermostat: Manual + OFF must be selectable while it is open.
+// ---- Boiler: mode toggle + power buttons ----
+// bman in /status: true = Manual, false = Auto. The mode toggle is not gated on
+// the thermostat: Manual + OFF must be selectable while it is open. The power
+// buttons are live only in Manual (Auto overrides a click within a minute) and
+// only while something can heat (no fault, physical input on, target not reached);
+// otherwise they just show the level currently held.
 let boilerManual = false;
 
 function renderBoilerMode(j) {
@@ -433,15 +437,42 @@ function renderBoilerMode(j) {
   boilerManual = !!j.bman;
   const status = document.getElementById("bm-status");
   const btn = document.getElementById("bm-toggle");
-  status.textContent = boilerManual ? "Vypnuto — ruční režim" : "Zapnuto";
+  status.textContent = boilerManual ? "Regulace vypnuta — ruční režim" : "Regulace zapnuta";
   status.className = "pill" + (boilerManual ? " err" : " ok");
   btn.textContent = boilerManual ? "Zapnout regulaci" : "Vypnout (ručně)";
   btn.disabled = false;
+
+  const power = Number(j.bp);
+  const canHeat = !j.bf && !!j.bo && !j.tr;
+  document.querySelectorAll(".bp-btn").forEach((b) => {
+    b.setAttribute("aria-pressed", String(Number(b.dataset.p) === power));
+    b.disabled = !boilerManual || !canHeat;
+  });
+  const note = document.getElementById("bp-note");
+  note.textContent = j.bf ? `porucha: ${j.bfr || ""}`
+    : j.tr ? "cílová teplota dosažena"
+    : !j.bo ? "fyzický termostat vypnul"
+    : boilerManual ? "" : "výkon drží regulace";
+}
+
+async function setBoilerPower(level) {
+  document.querySelectorAll(".bp-btn").forEach((b) => { b.disabled = true; });
+  try {
+    const resp = await fetch("/cmd", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "cmd", name: "set_boiler", value: level }),
+    });
+    if (!resp.ok) alert("HTTP chyba " + resp.status);
+  } catch (e) {
+    alert("Chyba: " + e);
+  }
+  await loadGuard();
 }
 
 async function toggleBoilerManual() {
   const on = !boilerManual;
-  if (on && !confirm("Přepnout boiler na ruční režim? Zvolený výkon se drží, dokud ho nezměníš, bez automatické regulace. Ukončí ho jen termostat, prázdná baterie nebo zapnutí regulace.")) return;
+  if (on && !confirm("Přepnout boiler na ruční režim? Zvolený výkon se drží, dokud ho nezměníš, bez automatické regulace. Ukončí ho jen termostat, cílová teplota, prázdná baterie nebo zapnutí regulace.")) return;
   const btn = document.getElementById("bm-toggle");
   btn.disabled = true;
   try {
@@ -492,4 +523,7 @@ document.getElementById("refresh").addEventListener("click", () => { load(); loa
 document.getElementById("update").addEventListener("click", doUpdate);
 document.getElementById("sg-toggle").addEventListener("click", toggleGuard);
 document.getElementById("bm-toggle").addEventListener("click", toggleBoilerManual);
+document.querySelectorAll(".bp-btn").forEach((b) => {
+  b.addEventListener("click", () => setBoilerPower(Number(b.dataset.p)));
+});
 window.addEventListener("DOMContentLoaded", () => { load(); loadGuard(); });

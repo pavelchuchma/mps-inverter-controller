@@ -7,11 +7,16 @@ function logln(s) { console.log(s); }
 // Czech decimal comma.
 const dec = (n, digits) => Number(n).toFixed(digits).replace('.', ',');
 
+// Readings below this [W] are measurement noise (the panels report a few watts
+// at night), shown as a plain zero.
+const POWER_NOISE_W = 10;
+
 // Power in W, switching to kW with one decimal from 1 kW up.
 // With `signed`, a positive value gets an explicit "+" (battery charging).
 function formatPower(w, signed) {
-  const n = Number(w);
+  let n = Number(w);
   if (w == null || isNaN(n)) return "—";
+  if (Math.abs(n) < POWER_NOISE_W) n = 0;
   const sign = signed && n > 0 ? "+" : (n < 0 ? "−" : "");
   const a = Math.abs(n);
   return a >= 1000 ? `${sign}${dec(a / 1000, 1)} kW` : `${sign}${Math.round(a)} W`;
@@ -61,15 +66,17 @@ function updateTemp(elId, raw) {
 
 // ---- commands ---------------------------------------------------------------
 
-let boilerPower = 0;
-let boilerFault = false;
-let boilerInputOn = true; // start enabled; updated from j.bo on first /status
-let boilerManual = false; // updated from j.bman on each /status
-const boilerLabels = ["Vyp", "500 W", "1000 W", "2000 W"];
 const boilerWatts = [0, 500, 1000, 2000];
+let boilerFault = false; // a fault is logged once, on its rising edge
 
-async function setBoiler(level) {
-  await send({ type: "cmd", name: "set_boiler", value: level });
+// Target temperature buttons: each cell is tinted with the tank colour of its
+// temperature (the CSS reads it from --c).
+document.querySelectorAll(".tgt-btn").forEach((btn) => {
+  btn.style.setProperty("--c", tempColor(btn.dataset.t));
+});
+
+async function setTarget(celsius) {
+  await send({ type: "cmd", name: "set_boiler_target_temp", value: celsius });
   await fetchStatus();
 }
 
@@ -126,9 +133,23 @@ function render(j) {
   const battValid = !!j.bav;
   $("app").classList.toggle("stale", !valid);
 
-  // Flow diagram
+  // Boiler state first: the house figure below needs to know whether it heats.
+  // The boiler input is the phase behind the physical thermostat (on = asking
+  // for heat); `tr` is the virtual thermostat saying the tank is at its target.
+  const inputOn = !!j.bo;
+  const reached = !!j.tr;
+  const fault = !!j.bf;
+  if (fault && !boilerFault) logln("BOILER FAULT: " + (j.bfr || "(unspecified)"));
+  boilerFault = fault;
+  const power = j.bp != null ? Number(j.bp) : 0;
+  const heating = !fault && inputOn && !reached && power > 0;
+  const boilW = heating ? boilerWatts[power] : 0;
+
+  // Flow diagram. The inverter's AC output includes the boiler, so the house
+  // gets the rest; without the subtraction 2 kW of sun read as 2 kW house and
+  // 2 kW boiler at once.
   const pv = valid && j.pcp != null ? Number(j.pcp) : null;
-  const home = valid && j.aw != null ? Number(j.aw) : null;
+  const home = valid && j.aw != null ? Math.max(0, Number(j.aw) - boilW) : null;
   const battW = battValid && j.bv != null && j.bc != null ? Number(j.bv) * Number(j.bc) : null;
   $("v_pv").textContent = formatPower(pv, false);
   $("v_home").textContent = formatPower(home, false);
@@ -171,50 +192,43 @@ function render(j) {
   $("g_top").setAttribute("stop-color", j.th == null ? "#9aa39d" : tempColor(j.th));
   $("g_bot").setAttribute("stop-color", j.tl == null ? "#9aa39d" : tempColor(j.tl));
 
-  // Boiler state
-  if (j.bo !== undefined) {
-    // The boiler input is the phase behind the thermostat, so "on" means the boiler is asking for heat.
-    boilerInputOn = !!j.bo;
-  }
-  $("thermo").textContent = boilerInputOn ? "termostat žádá teplo" : "termostat spokojen";
-  $("thermo").classList.toggle("on", boilerInputOn);
-
-  if (j.bman !== undefined) boilerManual = !!j.bman;
-  $("manualwarn").hidden = !boilerManual;
-
-  const newFault = !!j.bf;
-  if (newFault && !boilerFault) logln("BOILER FAULT: " + (j.bfr || "(unspecified)"));
-  boilerFault = newFault;
-
-  if (j.bp !== undefined) boilerPower = Number(j.bp);
-  const heating = !boilerFault && boilerInputOn && boilerPower > 0;
-  const label = boilerLabels[boilerPower] || "—";
-  const big = $("bo_big"), note = $("bo_note");
-  big.className = "big num";
-  if (boilerFault) {
-    big.textContent = "PORUCHA";
-    big.classList.add("fault");
-    note.textContent = j.bfr || "";
-  } else if (!boilerInputOn) {
-    // With the thermostat open nothing heats whatever the commanded power. In Manual
-    // the held power still matters (it resumes once the thermostat closes), so keep it visible.
-    big.textContent = "Vyp";
-    note.textContent = boilerManual && boilerPower > 0 ? `ručně ${label}, čeká na termostat` : "voda je teplá";
-  } else {
-    big.textContent = label;
-    if (boilerPower > 0) big.classList.add("heat");
-    note.textContent = boilerPower > 0 ? (boilerManual ? "drženo ručně" : "z přebytku panelů") : (boilerManual ? "ručně vypnuto" : "přebytek zatím nestačí");
-  }
+  // Boiler on the diagram: the effective heat request.
   $("c_boil").classList.toggle("on", valid && heating);
   $("tank_edge").style.stroke = heating ? "var(--heat)" : "var(--idle)";
-  $("v_boil").textContent = boilerFault ? "porucha" : formatPower(heating ? boilerWatts[boilerPower] : 0, false);
+  $("v_boil").textContent = fault ? "porucha" : formatPower(boilW, false);
   $("v_boil").classList.toggle("heat", heating);
 
-  const btnsDisabled = boilerFault || !boilerInputOn;
-  document.querySelectorAll(".boiler-btn").forEach((btn) => {
-    btn.disabled = btnsDisabled;
-    btn.setAttribute("aria-pressed", String(Number(btn.dataset.p) === boilerPower));
+  // Target temperature section. "reached" wins over the physical input: once both
+  // sensors are above the target it does not matter that the thermostat opened too.
+  const target = j.tt != null ? Number(j.tt) : null;
+  const low = j.th != null && j.tl != null ? Math.round(Math.min(Number(j.th), Number(j.tl))) : null;
+  $("tgt_big").textContent = target == null ? "—" : `${target}°`;
+  const st = $("tgt_state"), note = $("tgt_note");
+  if (target == null) {
+    st.textContent = "—";
+    note.textContent = "";
+  } else if (reached) {
+    st.textContent = "dosaženo";
+    note.innerHTML = `teplota nad <b class="num">${target}°</b>`;
+  } else if (!inputOn) {
+    st.textContent = "vypnul fyzický termostat";
+    note.innerHTML = low == null ? "" : `spodní teplota <b class="num">${low}°</b>, fyzický termostat je nastavený níž`;
+  } else {
+    // Heat is requested; whether it flows depends on the regulation (surplus) or the held power.
+    // Without both sensors the target is out of action and the tank heats up to the physical thermostat.
+    st.textContent = heating ? "ohřívá" : "žádá teplo";
+    note.innerHTML = low == null ? "teplota není k dispozici, hřeje po fyzický termostat"
+      : `spodní teplota <b class="num">${low}°</b>, chybí <b class="num">${Math.max(1, target - low)}°</b>`;
+  }
+  st.classList.toggle("on", target != null && !reached && inputOn);
+  // Without both temperatures the target has no effect, so the buttons are locked
+  // (the stored target stays highlighted).
+  document.querySelectorAll(".tgt-btn").forEach((btn) => {
+    btn.setAttribute("aria-pressed", String(Number(btn.dataset.t) === target));
+    btn.disabled = target == null || low == null;
   });
+
+  $("manualwarn").hidden = !j.bman;
 
   setBanner(!valid ? "Měnič neodpovídá (RS232)" : "");
 }

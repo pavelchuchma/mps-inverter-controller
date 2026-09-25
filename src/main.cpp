@@ -416,16 +416,22 @@ static void refresh_inverter_status() {
   display_redraw();
 }
 
+// Whole degrees, two characters wide ("52", " 8", "-2"); "--" when invalid.
+// The tenths are on the web pages; the LCD row needs the space for the target.
 static void format_temp_str(char* buf, float temp) {
   if (isnan(temp)) {
-    strcpy(buf, "--.-");
-  } else if (temp < 0) {
-    dtostrf(temp, 3, 0, buf);
+    strcpy(buf, "--");
   } else {
-    dtostrf(temp, 4, 1, buf);
+    dtostrf(temp, 2, 0, buf);
   }
 }
 
+// LCD temperature row: "T: 52/38 >45°C" — both tank sensors and the virtual
+// thermostat target, with one marker for the thermostat state:
+//   '>' heating allowed (target not reached, physical input on)
+//   '=' target reached (both sensors at or above it)
+//   'x' target not reached but the physical thermostat opened
+// '=' wins over 'x', matching the main page (doc/todo/008).
 static void task_update_temperature() {
   g_temp_l = read_thermistor_temp_c(THERMISTOR_L_PIN);
   g_temp_h = read_thermistor_temp_c(THERMISTOR_H_PIN);
@@ -433,7 +439,9 @@ static void task_update_temperature() {
   char h_str[6], l_str[6], buf[17];
   format_temp_str(h_str, g_temp_h);
   format_temp_str(l_str, g_temp_l);
-  snprintf(buf, sizeof(buf), "T: %s/%s\xDF" "C", h_str, l_str);
+  char mark = isBoilerTargetReached() ? '=' : (isBoilerOn() ? '>' : 'x');
+  snprintf(buf, sizeof(buf), "T: %s/%s %c%u\xDF" "C", h_str, l_str, mark,
+           (unsigned)getBoilerTargetTemp());
   display_set_row(ROW_TEMP, buf);
   display_redraw();
 }

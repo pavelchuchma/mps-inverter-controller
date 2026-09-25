@@ -9,13 +9,13 @@
     :root{
       --bg:#f2f4f0; --ink:#1b221e; --muted:#6a746e; --line:#d6dbd6; --seg:#e4e8e3;
       --pv:#d9890a; --bat:#2c9a5f; --bat-lo:#d9890a; --bat-crit:#cf4a3a; --house:#3a6db0; --heat:#d9542b; --idle:#9aa39d;
-      --ok:#2c9a5f; --err:#cf4a3a;
+      --ok:#2c9a5f; --err:#cf4a3a; --tint:.16;
     }
     @media (prefers-color-scheme: dark){
       :root{
         --bg:#131917; --ink:#e7ebe8; --muted:#8e988f; --line:#2a332e; --seg:#1f2824;
         --pv:#f0a627; --bat:#43b878; --bat-lo:#f0a627; --bat-crit:#e5695a; --house:#6f9ad8; --heat:#ef7a55; --idle:#5d675f;
-        --ok:#43b878; --err:#e5695a;
+        --ok:#43b878; --err:#e5695a; --tint:.28;
       }
     }
     *{box-sizing:border-box}
@@ -66,16 +66,18 @@
     .thermo{font-size:12px;color:var(--muted)}
     .thermo::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--idle);margin-right:6px}
     .thermo.on::before{background:var(--ok)}
-    .boilstate{display:flex;align-items:baseline;gap:10px;margin:8px 0 12px}
-    .boilstate .big{font-size:30px;font-weight:700;letter-spacing:-.01em}
-    .boilstate .big.heat{color:var(--heat)}
-    .boilstate .big.fault{background:var(--err);color:#fff;padding:0 10px;border-radius:8px;font-size:22px}
-    .boilstate .note{font-size:13px;color:var(--muted)}
+    .tgtrow{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin:8px 0 12px}
+    .tgtrow .big{font-size:30px;font-weight:700;letter-spacing:-.01em}
+    .tgtrow .note{font-size:13px;color:var(--muted);text-align:right}
+    .tgtrow .note b{color:var(--ink);font-weight:600}
 
-    .segs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:4px;border-radius:14px;background:var(--seg)}
-    .segs button{font:inherit;font-weight:600;font-size:15px;padding:12px 0;border:0;border-radius:10px;background:transparent;color:var(--ink);cursor:pointer;font-variant-numeric:tabular-nums}
-    .segs button[aria-pressed="true"]{background:var(--bg);box-shadow:0 1px 2px rgba(0,0,0,.12)}
-    .segs button[aria-pressed="true"].heat{color:var(--heat)}
+    /* target temperature: segmented control, one cell per set point. Each cell
+       carries the tank colour of its temperature (tempColor() in app.js, set as
+       --c); the chosen one is painted solid, the others only tinted. */
+    .segs{display:grid;grid-template-columns:repeat(8,1fr);gap:3px;padding:4px;border-radius:14px;background:var(--seg)}
+    .segs button{font:inherit;font-weight:600;font-size:15px;padding:12px 0;border:0;border-radius:10px;color:var(--ink);cursor:pointer;font-variant-numeric:tabular-nums;background:color-mix(in srgb, var(--c) calc(var(--tint) * 100%), transparent);transition:background .2s,color .2s}
+    .segs button[aria-pressed="true"]{background:var(--c);color:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+    .segs button[aria-pressed="true"]::after{content:"°"}
     .segs button:disabled{opacity:.35;cursor:not-allowed}
     .segs button:focus-visible{outline:2px solid var(--house);outline-offset:2px}
 
@@ -164,22 +166,27 @@
     </div>
   </div>
 
+  <!-- Virtual thermostat: the boiler heats until both tank sensors are above the target -->
   <section class="sec">
     <div class="sechead">
-      <h2>Boiler</h2>
-      <span class="thermo" id="thermo">termostat</span>
+      <h2>Cílová teplota</h2>
+      <span class="thermo" id="tgt_state">—</span>
     </div>
-    <div class="boilstate">
-      <span class="big num" id="bo_big">—</span>
-      <span class="note" id="bo_note"></span>
+    <div class="tgtrow">
+      <span class="big num" id="tgt_big">—</span>
+      <span class="note" id="tgt_note"></span>
     </div>
-    <div class="segs" role="group" aria-label="Výkon boileru">
-      <button class="boiler-btn" data-p="0" aria-pressed="false" onclick="setBoiler(0)">Vyp</button>
-      <button class="boiler-btn heat" data-p="1" aria-pressed="false" onclick="setBoiler(1)">500</button>
-      <button class="boiler-btn heat" data-p="2" aria-pressed="false" onclick="setBoiler(2)">1000</button>
-      <button class="boiler-btn heat" data-p="3" aria-pressed="false" onclick="setBoiler(3)">2000</button>
+    <div class="segs temps" role="group" aria-label="Cílová teplota boileru" id="tgt_btns">
+      <button class="tgt-btn" data-t="10" aria-pressed="false" onclick="setTarget(10)">10</button>
+      <button class="tgt-btn" data-t="20" aria-pressed="false" onclick="setTarget(20)">20</button>
+      <button class="tgt-btn" data-t="30" aria-pressed="false" onclick="setTarget(30)">30</button>
+      <button class="tgt-btn" data-t="35" aria-pressed="false" onclick="setTarget(35)">35</button>
+      <button class="tgt-btn" data-t="40" aria-pressed="false" onclick="setTarget(40)">40</button>
+      <button class="tgt-btn" data-t="45" aria-pressed="false" onclick="setTarget(45)">45</button>
+      <button class="tgt-btn" data-t="50" aria-pressed="false" onclick="setTarget(50)">50</button>
+      <button class="tgt-btn" data-t="55" aria-pressed="false" onclick="setTarget(55)">55</button>
     </div>
-    <div class="manualwarn" id="manualwarn" hidden>Ručně: drží zvolený výkon, dokud ho nezměníš. Vypne jen termostat, prázdná baterie nebo zapnutí automatické regulace v nastavení.</div>
+    <div class="manualwarn" id="manualwarn" hidden>Ruční režim: regulace vypnutá, boiler drží výkon z nastavení.</div>
   </section>
 
   <section class="sec">

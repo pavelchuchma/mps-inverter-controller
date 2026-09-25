@@ -169,7 +169,9 @@ function render() {
   fill("boiler", [
     row("Výkon boileru", has(j.bp) ? `${BOILER_W[j.bp] ?? "?"} W` : "—", ESP),
     row("Režim", has(j.bman) ? (j.bman ? "Manual" : "Auto") : "—", ESP),
-    row("Vstup (termostat)", onOff(j.bo), ESP),
+    row("Vstup (fyzický termostat)", onOff(j.bo), ESP),
+    row("Cílová teplota", num(j.tt, 0, " °C"), ESP),
+    row("Virtuální termostat", has(j.tr) ? (j.tr ? "dosaženo" : "žádá teplo") : "—", ESP),
     row("Porucha", j.bf ? `ANO: ${j.bfr || "(bez důvodu)"}` : "ne", ESP),
     row("SoC guard", guard, ESP),
     row("SoC guard: cílové LVD", num(j.sgl, 1, " V") + (has(j.sgok) ? (j.sgok ? " (zapsáno)" : " (zápis selhal)") : ""), ESP),

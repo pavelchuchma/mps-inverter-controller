@@ -19,6 +19,8 @@
     input.edit{width:5em;}
     .toolbar{display:flex;gap:10px;align-items:center;margin:0 0 12px;flex-wrap:wrap;}
     #update{background:#fee2e2;border-color:#fca5a5;font-weight:600;}
+    .bp-btn[aria-pressed="true"]{background:#e0e7ff;border-color:#a5b4fc;font-weight:600;}
+    .bp-btn:disabled{opacity:.5;cursor:not-allowed;}
   </style>
 </head>
 <body>
@@ -50,6 +52,24 @@
     <span class="muted">Zapíše jen změněná pole, po potvrzení.</span>
   </div>
 
+  <h2 style="margin-top:24px;">Boiler</h2>
+  <div class="toolbar">
+    <span id="bm-status" class="pill">…</span>
+    <button id="bm-toggle" disabled>…</button>
+  </div>
+  <div class="toolbar" id="bp-btns" role="group" aria-label="Výkon boileru">
+    <button class="bp-btn" data-p="0" disabled>Vyp</button>
+    <button class="bp-btn" data-p="1" disabled>500 W</button>
+    <button class="bp-btn" data-p="2" disabled>1000 W</button>
+    <button class="bp-btn" data-p="3" disabled>2000 W</button>
+    <span class="muted" id="bp-note"></span>
+  </div>
+  <div class="muted">
+    Regulace zapnuta: výkon boileru podle přebytku z panelů a stavu baterie, tlačítka výkonu jen ukazují stav.
+    Vypnuto (ruční režim): drží zvolený výkon, dokud ho nezměníš.
+    Vypne ho jen termostat, cílová teplota, prázdná baterie nebo zapnutí regulace.
+  </div>
+
   <h2 style="margin-top:24px;">SoC guard (hlídání vybití podle BMS)</h2>
   <div class="toolbar">
     <span id="sg-status" class="pill">…</span>
@@ -59,17 +79,6 @@
     Při SoC z BMS ≤ <span id="sg-arm">?</span> % přepne ESP program 29 (LVD) na 48.0 V,
     měnič vypne výstup. Při SoC ≥ <span id="sg-dis">?</span> % vrátí 46.0 V.
     Mezi tím běží výstup jen z PV.
-  </div>
-
-  <h2 style="margin-top:24px;">Automatická regulace boileru</h2>
-  <div class="toolbar">
-    <span id="bm-status" class="pill">…</span>
-    <button id="bm-toggle" disabled>…</button>
-  </div>
-  <div class="muted">
-    Zapnuto: výkon boileru podle přebytku z panelů a stavu baterie.
-    Vypnuto (ruční režim): drží výkon zvolený na hlavní stránce, dokud ho nezměníš.
-    Vypne ho jen termostat, prázdná baterie nebo zapnutí regulace.
   </div>
 
   <h2 style="margin-top:24px;">Stav a varování měniče</h2>

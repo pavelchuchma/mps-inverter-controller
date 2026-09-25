@@ -231,6 +231,8 @@ static void append_sample(String& buf, time_t ts, bool on_grid) {
     appendBool(line, first, "on", isBoilerOn());
     appendBool(line, first, "fault", isBoilerFault());
     appendBool(line, first, "manual", isBoilerManual());
+    appendInt(line, first, "target_temp", getBoilerTargetTemp());
+    appendBool(line, first, "target_reached", isBoilerTargetReached());
     appendFloat(line, first, "temp_high", g_temp_h);
     appendFloat(line, first, "temp_low", g_temp_l);
     line += tsbuf;

@@ -20,9 +20,11 @@ static constexpr uint8_t STATE_BITS[4] = {
 static constexpr uint16_t RELAY_SETTLE_MS = 30;  // spec ≥ 30 ms
 static constexpr uint16_t RELAY_B_VERIFY_TIMEOUT_MS = 1000;  // opto + RC filter can be slow
 
-// NVS home of the persisted mode flag (see setBoilerManual()). One bool only.
+// NVS home of the persisted mode flag (see setBoilerManual()) and the target
+// temperature (see setBoilerTargetTemp()). Two plain values, no struct.
 static const char* const NVS_NAMESPACE = "boiler";
 static const char* const NVS_KEY_MANUAL = "manual";
+static const char* const NVS_KEY_TARGET = "tgt";
 
 // The boiler heats primarily from PV surplus. Discharge is read directly from the
 // battery (Pylontech signed current, + charge / - discharge). Current below the
@@ -120,6 +122,12 @@ static constexpr uint32_t BOILER_INPUT_DEBOUNCE_MS = 200;
 // See tickBoiler().
 static constexpr uint32_t BOILER_RELAY_B_VERIFY_DEBOUNCE_MS = 200;
 
+// Tank sensors read NAN until the first ADC sample (~1 s after setup()). A sensor
+// still invalid this long after the first evaluation is reported in the log; see
+// updateTargetReached(). Measured from the first tick, not from power-on: the
+// WiFi connect in setup() alone takes longer than this.
+static constexpr uint32_t BOILER_TANK_SENSOR_GRACE_MS = 5000;
+
 // volatile: currentPower may be read from another FreeRTOS task
 // (inverter control). 1-byte enum reads are atomic on Xtensa.
 static volatile BoilerPower currentPower = BOILER_OFF;
@@ -184,6 +192,18 @@ static const char* boilerFaultReason = nullptr;  // static-string only
 // read from other tasks (status JSON, InfluxDB sampler).
 static volatile bool boilerManual = false;
 
+// Virtual thermostat state (see relay.h / doc/todo/008). The target is loaded
+// from NVS in boilerRelayInit(), written by setBoilerTargetTemp(). volatile like
+// boilerManual — read from the status JSON and the InfluxDB sampler.
+// targetReached is the hysteresis output; tankTempValid tracks whether the last
+// evaluation had both sensors, so a sensor dropping out is logged once (-1 =
+// nothing evaluated yet, so the NAN readings before the first ADC sample after
+// boot are not reported as a failure).
+static volatile uint8_t boilerTargetTempC = BOILER_TARGET_DEFAULT_C;
+static volatile bool targetReached = false;
+static int8_t tankTempValid = -1;
+static uint32_t firstTankEvalMs = 0;  // millis() of the first evaluation (0 = none yet)
+
 static inline bool isCommandedRelayBHigh(BoilerPower p) {
   return STATE_BITS[p] & 0b010;
 }
@@ -240,8 +260,91 @@ void boilerRelayInit() {
   Preferences prefs;
   prefs.begin(NVS_NAMESPACE, true);
   boilerManual = prefs.getBool(NVS_KEY_MANUAL, false);
+  uint8_t tgt = prefs.getUChar(NVS_KEY_TARGET, BOILER_TARGET_DEFAULT_C);
   prefs.end();
   if (boilerManual) printInfo("Boiler mode Manual restored from NVS, target OFF");
+  // Clamp a corrupt value rather than trusting it; "reached" is recomputed from
+  // live readings on the first tick.
+  boilerTargetTempC = (tgt < BOILER_TARGET_MIN_C || tgt > BOILER_TARGET_MAX_C)
+                        ? BOILER_TARGET_DEFAULT_C : tgt;
+  printInfo("Boiler target temp %u C (NVS)", (unsigned)boilerTargetTempC);
+}
+
+// Virtual thermostat: recompute targetReached from the two tank sensors with a
+// BOILER_TARGET_HYST_C hysteresis around the target. Both sensors must be at or
+// above the target to flip to "reached"; the cooler one dropping to
+// target - hysteresis flips it back. While either sensor reads NAN the virtual
+// thermostat is out of action: "reached" is cleared and the tank heats up to the
+// physical thermostat, exactly as before this feature. Losing hot water to a dead
+// sensor would be worse than heating a few degrees higher, and the physical
+// thermostat is the safety limit either way. Called every tick and right after
+// the target changes.
+static void updateTargetReached() {
+  float th = g_temp_h, tl = g_temp_l;
+  bool valid = !isnan(th) && !isnan(tl);
+  uint32_t now = millis();
+  if (firstTankEvalMs == 0) firstTankEvalMs = now ? now : 1;
+  if ((int8_t)valid != tankTempValid) {
+    if (!valid) {
+      // The ADC is first sampled ~1 s after the loop starts; do not report that
+      // gap as a failure. A sensor still invalid after the grace period is reported.
+      if (tankTempValid < 0 && now - firstTankEvalMs < BOILER_TANK_SENSOR_GRACE_MS) return;
+      printWarning("Boiler tank sensor invalid (H %.1f / L %.1f), heating up to the physical thermostat",
+                   th, tl);
+    } else if (tankTempValid >= 0) {
+      printInfo("Boiler tank sensors valid again (H %.1f / L %.1f)", th, tl);
+    }
+    tankTempValid = valid;
+  }
+  if (!valid) {
+    if (targetReached) {
+      influx_log_event();
+      targetReached = false;
+    }
+    return;
+  }
+
+  float tmin = th < tl ? th : tl;
+  uint8_t tgt = boilerTargetTempC;
+  if (!targetReached && tmin >= tgt) {
+    printInfo("Boiler target %u C reached (H %.1f / L %.1f)", (unsigned)tgt, th, tl);
+    influx_log_event();
+    targetReached = true;
+  } else if (targetReached && tmin <= (float)tgt - BOILER_TARGET_HYST_C) {
+    printInfo("Boiler tank below %u C (H %.1f / L %.1f), heating allowed",
+              (unsigned)(tgt - BOILER_TARGET_HYST_C), th, tl);
+    influx_log_event();
+    targetReached = false;
+  }
+}
+
+bool setBoilerTargetTemp(uint8_t celsius) {
+  if (celsius < BOILER_TARGET_MIN_C || celsius > BOILER_TARGET_MAX_C) return false;
+  if (celsius == boilerTargetTempC) return true;
+  printInfo("Boiler target temp %u -> %u C (Web UI)", (unsigned)boilerTargetTempC,
+            (unsigned)celsius);
+  influx_log_event();
+  boilerTargetTempC = celsius;
+
+  Preferences prefs;
+  if (prefs.begin(NVS_NAMESPACE, false)) {
+    prefs.putUChar(NVS_KEY_TARGET, celsius);
+    prefs.end();
+  } else {
+    printWarning("Boiler target temp: NVS open failed, value not persisted");
+  }
+  // Re-evaluate at once so a lower target on a hot tank stops the heating on
+  // the next tick and a higher one lets it resume without waiting a loop.
+  updateTargetReached();
+  return true;
+}
+
+uint8_t getBoilerTargetTemp() {
+  return boilerTargetTempC;
+}
+
+bool isBoilerTargetReached() {
+  return targetReached;
 }
 
 // Set the commanded power target, logging the change (with reason) to the app
@@ -455,14 +558,19 @@ void tickBoiler() {
   // until reboot (reported "on" stays stale the whole time the fault is set).
   uint32_t now = millis();
   sampleBoilerInput(now);
+  // Same reasoning for the virtual thermostat: keep it tracking the tank even
+  // while faulted so the reported state stays live.
+  updateTargetReached();
 
   if (boilerFault) return;
 
-  // Mains absent at A.COM (no heating possible, no AC for the opto to detect) or
-  // inverter data stale/lost (comms down for several consecutive polls) — force
-  // the chain back to OFF. Automatic regulation runs only when neither holds.
+  // Mains absent at A.COM (no heating possible, no AC for the opto to detect),
+  // tank at its target (virtual thermostat, same semantics as the physical one)
+  // or inverter data stale/lost (comms down for several consecutive polls) —
+  // force the chain back to OFF. Automatic regulation runs only when none holds.
   const char* forceOffReason = nullptr;
   if (!isBoilerOn()) forceOffReason = "boiler input off";
+  else if (targetReached) forceOffReason = "target temperature reached";
   else if (!inverter_data_valid()) forceOffReason = "inverter data invalid";
   else if (!pylontech_data_valid()) forceOffReason = "battery data invalid";
 

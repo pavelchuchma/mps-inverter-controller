@@ -103,6 +103,19 @@ BoilerPower getBoilerPower();
 void setBoilerManual(bool on);
 bool isBoilerManual();
 
+// Virtual thermostat (see doc/todo/008-boiler-target-temperature.md). The
+// boiler heats until both tank sensors are at or above the target temperature;
+// "reached" then acts as a force-off exactly like the physical thermostat
+// opening, and clears again once the cooler sensor drops BOILER_TARGET_HYST_C
+// below the target. The target is persisted in NVS on change.
+static constexpr uint8_t BOILER_TARGET_MIN_C = 10;
+static constexpr uint8_t BOILER_TARGET_MAX_C = 60;
+static constexpr uint8_t BOILER_TARGET_DEFAULT_C = 45;
+static constexpr uint8_t BOILER_TARGET_HYST_C = 3;
+bool setBoilerTargetTemp(uint8_t celsius);   // false when out of range
+uint8_t getBoilerTargetTemp();
+bool isBoilerTargetReached();
+
 // Sticky fault state. Set by emergencyShutdown() when relay B's commanded
 // state disagrees with the verifier sensor. Cleared only by reboot.
 // While set, setBoilerPower() and tickBoiler() are no-ops.
