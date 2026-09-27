@@ -384,11 +384,11 @@ static void refresh_inverter_status() {
 
   char buf[17];
 
-  // SoC and battery power come directly from the Pylontech console (its own
-  // validity flag), independent of the inverter link.
-  PylontechState bat;
-  pylontech_get_status(&bat);
-  if (!g_pylontech_data_valid) {
+  // SoC and battery power come from the Pylontech CAN link (its own validity
+  // flag), independent of the inverter link.
+  PylontechCanState bat = {};
+  pylontech_can_get(&bat);
+  if (!pylontech_can_valid()) {
     display_set_row(ROW_SOC, "SoC: --");
     display_set_row(ROW_BATT_POWER, "Bat: --");
   } else {
@@ -400,7 +400,7 @@ static void refresh_inverter_status() {
     display_set_row(ROW_SOC, buf);
 
     // current is signed: + charge / - discharge.
-    int batt_w = (int)(bat.voltage * bat.current);
+    int batt_w = (int)(bat.voltage_v * bat.current_a);
     snprintf(buf, sizeof(buf), "Bat: %dW", batt_w);
     display_set_row(ROW_BATT_POWER, buf);
   }

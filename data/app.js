@@ -136,7 +136,9 @@ const FLOW_MIN_W = 30; // below this a wire is drawn idle
 function render(j) {
   // /status uses short keys to minimize GSM payload; see makeStatusJson() in esp_webserver.cpp.
   const valid = !!j.iv;
-  const battValid = !!j.bav;
+  // Battery figures come from the CAN link (`cav`, `cbs`, `cbv`, `cbc`); the
+  // console keys (`bav`, `bs`, ...) stay in /status for the details page.
+  const battValid = !!j.cav;
   $("app").classList.toggle("stale", !valid);
 
   // Boiler state first: the house figure below needs to know whether it heats.
@@ -156,7 +158,7 @@ function render(j) {
   // 2 kW boiler at once.
   const pv = valid && j.pcp != null ? Number(j.pcp) : null;
   const home = valid && j.aw != null ? Math.max(0, Number(j.aw) - boilW) : null;
-  const battW = battValid && j.bv != null && j.bc != null ? Number(j.bv) * Number(j.bc) : null;
+  const battW = battValid && j.cbv != null && j.cbc != null ? Number(j.cbv) * Number(j.cbc) : null;
   $("v_pv").textContent = formatPower(pv, false);
   $("v_home").textContent = formatPower(home, false);
   $("v_bat").textContent = formatPower(battW, true);
@@ -173,7 +175,7 @@ function render(j) {
   $("inv_arc").setAttribute("stroke", lp != null && lp >= 80 ? "var(--err)" : "var(--ink)");
 
   // Battery bar + row
-  const soc = battValid && j.bs != null ? Math.round(Number(j.bs)) : null;
+  const soc = battValid && j.cbs != null ? Math.round(Number(j.cbs)) : null;
   const guardPct = j.sgarm != null ? Number(j.sgarm) : 15;
   const crit = soc != null && soc <= guardPct, lo = soc != null && soc <= 30;
   $("b_fill").style.width = `${soc == null ? 0 : soc}%`;
@@ -182,8 +184,8 @@ function render(j) {
   $("i_batfill").style.fill = crit ? "var(--bat-crit)" : lo ? "var(--bat-lo)" : "var(--bat)";
   $("b_soc").textContent = soc == null ? "—" : `${soc} %`;
   $("b_mode").textContent = battW == null ? "stav neznámý" : battW > FLOW_MIN_W ? "nabíjí se" : battW < -FLOW_MIN_W ? "vybíjí se" : "v klidu";
-  $("b_volt").textContent = battValid && j.bv != null && j.bc != null
-    ? `${dec(j.bv, 1)} V · ${Number(j.bc) > 0 ? "+" : Number(j.bc) < 0 ? "−" : ""}${dec(Math.abs(Number(j.bc)), 1)} A`
+  $("b_volt").textContent = battValid && j.cbv != null && j.cbc != null
+    ? `${dec(j.cbv, 1)} V · ${Number(j.cbc) > 0 ? "+" : Number(j.cbc) < 0 ? "−" : ""}${dec(Math.abs(Number(j.cbc)), 1)} A`
     : "";
   const guard = $("b_guard");
   guard.hidden = !j.sg;

@@ -474,6 +474,7 @@ New short keys in `makeStatusJson()`, in the existing style:
 | `chv` | recommended charge voltage [V] |
 | `soh` | state of health [%] |
 | `cbv`, `cbc` | CAN voltage / current, for the cross-check row |
+| `cbs` | CAN SoC; the main page renders SoC, voltage and current from the CAN keys |
 
 `data/index.html` + `app.js`: one row — `BMS: 100 A chg / 200 A dchg · SoH 100 %`
 — greyed out when `cav` is false. Optionally a discreet warning when

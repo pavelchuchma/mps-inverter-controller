@@ -76,8 +76,9 @@ static String makeStatusJson(bool full) {
   JsonDocument doc;
   InverterState s = {};
   inverter_get_status(&s);
-  // Battery values (SoC, voltage, current) come directly from the Pylontech
-  // console, independent of the inverter link.
+  // Console battery values (SoC, voltage, current), independent of the
+  // inverter link. The main page renders the CAN keys below; these stay for
+  // the details page, where they sit next to the CAN values as a cross-check.
   PylontechState bat = {};
   pylontech_get_status(&bat);
   doc["iv"]  = g_inverter_data_valid;
@@ -143,13 +144,14 @@ static String makeStatusJson(bool full) {
   doc["slp"] = pylontech_comm_paused();  // console link paused (telnet client connected)
 
   // ---- Battery CAN link ----
-  // Only the fields the UI actually shows plus the two the cross-check row
-  // needs; the full decoded set stays on /can, which is the diagnostic
-  // endpoint. Sent even when stale so the UI can grey the row rather than
-  // blank it.
+  // Only the fields the UI actually shows (the main page's SoC, voltage and
+  // current, and the details page's limits and cross-check rows); the full
+  // decoded set stays on /can, which is the diagnostic endpoint. Sent even
+  // when stale so the UI can grey the row rather than blank it.
   PylontechCanState can = {};
   pylontech_can_get(&can);
   doc["cav"] = pylontech_can_valid();
+  doc["cbs"] = can.soc;
   doc["ccl"] = can.ccl_a;
   doc["dcl"] = can.dcl_a;
   doc["chv"] = can.charge_v;
