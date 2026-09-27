@@ -1,6 +1,6 @@
 // Settings page: reads inverter configuration on demand (QPIRI + QFLAG) and
 // compares it against the target setup from the manual
-// (doc/.../nastaveni_MPS-5500H_PowerSafe_48V.md). Six fields are editable and can
+// (doc/.../nastaveni_MPS-5500H_PowerSafe_48V.md). Seven fields are editable and can
 // be written back to the inverter via POST /inv_set. All parsing/mapping lives
 // here so it can be tweaked by re-uploading web files without reflashing firmware.
 //
@@ -32,6 +32,7 @@ const PV_BALANCE = { "0": "dle proudu", "1": "dle zátěž+nabíjení" };
 //   flag:  QFLAG letter + expected enabled/disabled
 // Editable rows additionally carry `edit`:
 //   { prefix, kind:'volt'|'curr', min, max, step }  -> writes "<prefix><value>".
+//   { prefix, kind:'choice', values:[...], unit }    -> writes "<prefix><value>".
 const ROWS = [
   { id: "00", name: "Návrat z režimu nastavení", expected: "ESC", note: "Jen odchod z menu." },
   { id: "01", name: "Priorita zdroje (pro pokrytí zátěže)", expected: "SBU",
@@ -57,19 +58,21 @@ const ROWS = [
     note: "Po ochlazení znovu najede.",
     flag: { letter: "V", enabled: true } },
   { id: "08", name: "Výstupní napětí", expected: "230 V", note: "Standard CZ/EU.",
-    qpiri: { idx: 2, type: "num", value: 230, unit: "V" } },
+    qpiri: { idx: 2, type: "num", value: 230, unit: "V" },
+    // V<nnn> comes from the PI30MAX protocol (not in our PI30 doc), HV models 220/230/240.
+    edit: { prefix: "V", kind: "choice", values: ["220", "230", "240"], unit: "V" } },
   { id: "09", name: "Výstupní frekvence", expected: "50 Hz", note: "Standard CZ/EU.",
     qpiri: { idx: 3, type: "num", value: 50, unit: "Hz" } },
-  { id: "11", name: "Max nabíjecí proud ze sítě", expected: "20 A",
+  { id: "11", name: "Max nabíjecí proud ze sítě", expected: "2 A",
     note: "Nemáš AC → nastav minimum.",
-    qpiri: { idx: 13, type: "num", value: 20, unit: "A" } },
-  { id: "12", name: "Napětí pro návrat ke spotřebě ze sítě (SBU)", expected: "46 V",
+    qpiri: { idx: 13, type: "num", value: 2, unit: "A" } },
+  { id: "12", name: "Napětí pro návrat ke spotřebě ze sítě (SBU)", expected: "48 V",
     note: "Bez sítě se nepoužije, ale nastav konzervativně.",
-    qpiri: { idx: 8, type: "num", value: 46, unit: "V" },
+    qpiri: { idx: 8, type: "num", value: 48, unit: "V" },
     edit: { prefix: "PBCV", kind: "volt", min: 44, max: 51, step: 0.1 } },
-  { id: "13", name: "Napětí pro návrat ke spotřebě z baterie (SBU)", expected: "50 V",
+  { id: "13", name: "Napětí pro návrat ke spotřebě z baterie (SBU)", expected: "48 V",
     note: "Reconnect hranice, aby to necukalo.",
-    qpiri: { idx: 22, type: "num", value: 50, unit: "V" },
+    qpiri: { idx: 22, type: "num", value: 48, unit: "V" },
     edit: { prefix: "PBDV", kind: "volt", min: 48, max: 58, step: 0.1 } },
   { id: "16", name: "Priorita zdroje nabíječe", expected: "Solar first (CSO)",
     note: "Nabíjení pouze z FV.",
@@ -82,25 +85,25 @@ const ROWS = [
     flag: { letter: "K", enabled: true } },
   { id: "20", name: "Podsvícení", expected: "Zapnuto", note: "Jen LCD.",
     flag: { letter: "X", enabled: true } },
-  { id: "22", name: "Pípnutí při výpadku primárního zdroje", expected: "Zapnuto",
+  { id: "22", name: "Pípnutí při výpadku primárního zdroje", expected: "Vypnuto",
     note: "V ostrovním režimu to pomůže hlídat stav.",
-    flag: { letter: "Y", enabled: true } },
+    flag: { letter: "Y", enabled: false } },
   { id: "23", name: "Bypass při přetížení", expected: "Bypass zakázán",
     note: "Bypass = síť, ale žádnou nemáš.",
     flag: { letter: "B", enabled: false } },
   { id: "25", name: "Log chyb", expected: "Povolen", note: "Pomůže při diagnostice.",
     flag: { letter: "Z", enabled: true } },
-  { id: "26", name: "Nabíjecí napětí v „bulk“ fázi", expected: "55.2 V",
+  { id: "26", name: "Nabíjecí napětí v „bulk“ fázi", expected: "52.5 V",
     note: "Doporučené Bulk/Absorb pro 48V VRLA (4×12V).",
-    qpiri: { idx: 10, type: "num", value: 55.2, unit: "V" },
+    qpiri: { idx: 10, type: "num", value: 52.5, unit: "V" },
     edit: { prefix: "PCVV", kind: "volt", min: 48.0, max: 58.4, step: 0.1 } },
-  { id: "27", name: "Udržovací (Float) napětí baterie", expected: "54.5 V",
+  { id: "27", name: "Udržovací (Float) napětí baterie", expected: "51.5 V",
     note: "Odpovídá štítku PowerSafe (cca 54.5–55.0V dle teploty).",
-    qpiri: { idx: 11, type: "num", value: 54.5, unit: "V" },
+    qpiri: { idx: 11, type: "num", value: 51.5, unit: "V" },
     edit: { prefix: "PBFT", kind: "volt", min: 48.0, max: 58.4, step: 0.1 } },
-  { id: "29", name: "Nízké stejnosměrné přerušení (LVD)", expected: "46.5 V",
+  { id: "29", name: "Nízké stejnosměrné přerušení (LVD)", expected: "46.0 V",
     note: "Šetrné minimum pro životnost baterií. SoC guard (níže) tento parametr přepíná 46.0 / 48.0 V.",
-    qpiri: { idx: 9, type: "num", value: 46.5, unit: "V" },
+    qpiri: { idx: 9, type: "num", value: 46.0, unit: "V" },
     edit: { prefix: "PSDV", kind: "volt", min: 40.0, max: 48.0, step: 0.1 } },
   { id: "31", name: "Rovnováha solárního výkonu", expected: "Povoleno",
     note: "Omezí výkon dle: zátěž + nabíjení.",
@@ -183,6 +186,19 @@ function editCell(row, raw) {
       data-id="${esc(row.id)}" data-name="${esc(row.name)}" data-prefix="${e.prefix}"
       data-kind="volt" data-min="${e.min}" data-max="${e.max}"
       data-orig="${esc(val)}" value="${esc(val)}"> V`;
+  }
+  if (e.kind === "choice") {
+    // QPIRI reports "230.0", the command takes the integer "230".
+    const cur = String(Math.round(parseFloat(raw)));
+    let vals = e.values.slice();
+    if (!vals.includes(cur)) vals = [cur, ...vals];
+    const opts = vals.map(v => {
+      const sel = v === cur ? " selected" : "";
+      return `<option value="${esc(v)}"${sel}>${esc(v)} ${e.unit}</option>`;
+    }).join("");
+    return `<select class="edit"
+      data-id="${esc(row.id)}" data-name="${esc(row.name)}" data-prefix="${e.prefix}"
+      data-kind="choice" data-unit="${e.unit}" data-orig="${esc(cur)}">${opts}</select>`;
   }
   // current: select limited to the QMCHGCR-reported values (only valid choices).
   let toks = MCHGCR.slice();
@@ -341,6 +357,11 @@ function collectChanges() {
       const now = v.toFixed(1);
       if (now === orig) return;
       changes.push({ id, name, orig: orig + " V", now: now + " V", cmd: prefix + now });
+    } else if (inp.dataset.kind === "choice") {
+      const val = (inp.value || "").trim();
+      if (val === "" || val === orig) return;
+      const unit = inp.dataset.unit;
+      changes.push({ id, name, orig: `${orig} ${unit}`, now: `${val} ${unit}`, cmd: prefix + val });
     } else { // curr (select)
       const tok = (inp.value || "").trim();
       if (tok === "" || tok === orig) return;
@@ -362,7 +383,7 @@ async function doUpdate() {
   }
   const summary = changes.map(c => `${c.id} ${c.name}:  ${c.orig} → ${c.now}   [${c.cmd}]`).join("\n");
   if (!confirm("Opravdu zapsat do měniče následující změny?\n\n" + summary +
-               "\n\nPozor: mění se nabíjecí parametry baterie.")) {
+               "\n\nPozor: mění se parametry měniče (nabíjení baterie, výstup AC).")) {
     return;
   }
   setStatus("Zapisuji do měniče…", "");

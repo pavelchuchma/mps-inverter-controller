@@ -440,6 +440,9 @@ static const char* const INV_SET_ALLOWED[] = {
 // Validate a write command: prefix must be allowlisted and the value part may
 // contain only digits and '.', with the whole command kept short.
 static bool invSetCmdAllowed(const String& cmd) {
+  // Output voltage (PI30MAX V<nnn>) is not a prefix entry: only the three HV
+  // ratings pass, a bare "V" prefix would let any number through.
+  if (cmd.startsWith("V")) return cmd == "V220" || cmd == "V230" || cmd == "V240";
   if (cmd.length() < 4 || cmd.length() > 12) return false;
   const char* prefix = nullptr;
   for (const char* p : INV_SET_ALLOWED) {
