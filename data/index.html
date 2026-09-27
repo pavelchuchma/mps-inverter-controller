@@ -74,7 +74,7 @@
     /* target temperature: segmented control, one cell per set point. Each cell
        carries the tank colour of its temperature (tempColor() in app.js, set as
        --c); the chosen one is painted solid, the others only tinted. */
-    .segs{display:grid;grid-template-columns:repeat(8,1fr);gap:3px;padding:4px;border-radius:14px;background:var(--seg)}
+    .segs{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;padding:4px;border-radius:14px;background:var(--seg)}
     .segs button{font:inherit;font-weight:600;font-size:15px;padding:12px 0;border:0;border-radius:10px;color:var(--ink);cursor:pointer;font-variant-numeric:tabular-nums;background:color-mix(in srgb, var(--c) calc(var(--tint) * 100%), transparent);transition:background .2s,color .2s}
     .segs button[aria-pressed="true"]{background:var(--c);color:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)}
     .segs button[aria-pressed="true"]::after{content:"°"}
@@ -184,7 +184,6 @@
       <button class="tgt-btn" data-t="40" aria-pressed="false" onclick="setTarget(40)">40</button>
       <button class="tgt-btn" data-t="45" aria-pressed="false" onclick="setTarget(45)">45</button>
       <button class="tgt-btn" data-t="50" aria-pressed="false" onclick="setTarget(50)">50</button>
-      <button class="tgt-btn" data-t="55" aria-pressed="false" onclick="setTarget(55)">55</button>
     </div>
     <div class="manualwarn" id="manualwarn" hidden>Ruční režim: regulace vypnutá, boiler drží výkon z nastavení.</div>
   </section>

@@ -75,7 +75,13 @@ document.querySelectorAll(".tgt-btn").forEach((btn) => {
   btn.style.setProperty("--c", tempColor(btn.dataset.t));
 });
 
+// Target shown by the last status, so a click on it does not ask again.
+let currentTarget = null;
+
 async function setTarget(celsius) {
+  if (celsius === currentTarget) return;
+  const from = currentTarget == null ? "" : ` z ${currentTarget} °C`;
+  if (!confirm(`Změnit cílovou teplotu boileru${from} na ${celsius} °C?`)) return;
   await send({ type: "cmd", name: "set_boiler_target_temp", value: celsius });
   await fetchStatus();
 }
@@ -201,6 +207,7 @@ function render(j) {
   // Target temperature section. "reached" wins over the physical input: once both
   // sensors are above the target it does not matter that the thermostat opened too.
   const target = j.tt != null ? Number(j.tt) : null;
+  currentTarget = target;
   const low = j.th != null && j.tl != null ? Math.round(Math.min(Number(j.th), Number(j.tl))) : null;
   $("tgt_big").textContent = target == null ? "—" : `${target}°`;
   const st = $("tgt_state"), note = $("tgt_note");
