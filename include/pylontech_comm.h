@@ -80,8 +80,8 @@ bool pylontech_data_valid();
 // Temporarily silence this link's RS232 traffic, so the telnet console bridge
 // (battery_telnet.cpp) can have Serial2 to itself for the length of a session.
 //
-// Pausing clears the validity flag, so relay.cpp forces the boiler off rather
-// than regulating on a frozen snapshot. `max_ms` is an auto-resume deadline, so
+// Pausing clears the validity flag, so consumers (LCD, /status, InfluxDB) show
+// a gap rather than a frozen snapshot. `max_ms` is an auto-resume deadline, so
 // the link returns by itself even if the operator loses connectivity.
 void pylontech_comm_set_paused(bool paused, uint32_t max_ms);
 bool pylontech_comm_paused();

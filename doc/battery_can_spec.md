@@ -490,10 +490,12 @@ New data with no console equivalent: **CCL / DCL** (`0x351`), **SoH** (`0x355`),
 and the force-charge / request-full-charge flags (`0x35C`). There is no DVL —
 see [`0x351`](#0x351--charge-voltage-and-current-limits).
 
-Boiler regulation is unaffected: `autoRegulate()` in `relay.cpp` reads only
-`b.soc`, `b.current` and `b.voltage`, all of which CAN provides. The power
-figure `b.voltage * b.current` becomes quantised to ≈ 5 W steps, irrelevant
-against the boiler's 500 W steps.
+Boiler regulation (`autoRegulate()` in `relay.cpp`) runs on the CAN values:
+`soc` (`0x355`), `current_a` and `voltage_v` (`0x356`). The power figure
+`voltage_v * current_a` is quantised to ≈ 5 W steps, irrelevant against the
+boiler's 500 W steps. Control uses its own freshness bound
+(`BOILER_BATT_MAX_AGE_MS`, 30 s) on the SoC and measured groups instead of
+`pylontech_can_valid()`, so a few dropped bursts do not force the boiler off.
 
 ## Firmware
 

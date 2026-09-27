@@ -286,8 +286,8 @@ static void pylontech_task(void* arg) {
         printInfo("[BAT] serial link auto-resumed");
         continue;
       }
-      // Keep the data invalid while muted, so the boiler fails off instead of
-      // regulating on a snapshot that has stopped advancing.
+      // Keep the data invalid while muted, so consumers see a gap instead of
+      // a snapshot that has stopped advancing.
       if (g_pylon_mutex) xSemaphoreTake(g_pylon_mutex, portMAX_DELAY);
       g_pylontech_data_valid = false;
       if (g_pylon_mutex) xSemaphoreGive(g_pylon_mutex);

@@ -11,8 +11,9 @@
 // The periodic 'pwr' poll cannot share the UART, so a session pauses it via
 // pylontech_comm_set_paused() for the whole time it is connected. That has two
 // consequences that are load-bearing, not incidental:
-//   - Battery data goes invalid, so relay.cpp forces the boiler off. A session
-//     means the boiler does not heat.
+//   - Console battery data goes invalid: the LCD shows `--`, /status reports
+//     `bav: false` and chajda-battery gets a gap. Boiler regulation is not
+//     affected, it runs on the CAN link (relay.cpp).
 //   - The session is capped at BATTERY_TELNET_SESSION_MS and the pause deadline
 //     is deliberately longer, so polling can never resume underneath a live
 //     session and start injecting 'pwr' into it.

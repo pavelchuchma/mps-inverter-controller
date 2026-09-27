@@ -136,7 +136,7 @@ static void run_session(WiFiClient& client) {
 
   client.printf("Connected, battery console is yours for %u min\r\n",
                 (unsigned)(BATTERY_TELNET_SESSION_MS / 60000UL));
-  printInfo("[TELNET] console session opened from %s (polling paused, boiler off)",
+  printInfo("[TELNET] console session opened from %s (polling paused)",
             client.remoteIP().toString().c_str());
 
   TelnetFilter filter = {};

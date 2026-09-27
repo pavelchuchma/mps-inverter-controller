@@ -1,7 +1,7 @@
 #include "relay.h"
 #include <Preferences.h>
 #include "inverter_comm.h"
-#include "pylontech_comm.h"
+#include "pylontech_can.h"
 #include "influx.h"
 #include "utils.h"
 
@@ -27,7 +27,7 @@ static const char* const NVS_KEY_MANUAL = "manual";
 static const char* const NVS_KEY_TARGET = "tgt";
 
 // The boiler heats primarily from PV surplus. Discharge is read directly from the
-// battery (Pylontech signed current, + charge / - discharge). Current below the
+// battery's CAN broadcast (signed current, + charge / - discharge). Current below the
 // (SoC-dependent) limit counts as "discharging" and steps the boiler down. The limit
 // also doubles as a deadband around idle so noise near zero does not trip a step-down.
 // When the battery is well charged (SoC > BOILER_DISCHARGE_HIGH_SOC) there is enough
@@ -77,8 +77,9 @@ static constexpr uint32_t BOILER_MORNING_DELAY_MS = 30UL * 60 * 1000;  // 30 min
 static constexpr uint32_t BOILER_MORNING_REARM_MS = 60UL * 60 * 1000;  // 1 h
 
 // --- Battery-driven regulation (Pylontech) ---
-// All battery signals come directly from the Pylontech console; the inverter's
-// battery fields are no longer used for boiler control. Two SoC bands:
+// All battery signals come from the Pylontech CAN link (pylontech_can.h): SoC from
+// 0x355, voltage and current from 0x356. Neither the console link nor the
+// inverter's battery fields are used for boiler control. Two SoC bands:
 //   < BOILER_RAISE_MIN_SOC -> boiler OFF (let the battery recharge)
 //   >= BOILER_RAISE_MIN_SOC -> step up via either path; the discharge rule caps it:
 //     A) charge surplus  - the battery is accepting charge, so charge power is a
@@ -93,10 +94,17 @@ static constexpr float BOILER_STEP_MARGIN = 1.20f;
 // Watts the next step up adds, indexed by the current target rank
 // (OFF/500W/1000W/2000W). 0 at the top rank (no step).
 static constexpr int STEP_UP_INCREMENT_W[4] = { 500, 500, 1000, 0 };
-// Settle time between charge-surplus step-ups: long enough for at least one fresh
-// Pylontech sample (PYLONTECH_POLL_INTERVAL_MS, 5 s) to reflect the new load
-// before re-evaluating. The discharge rule still catches any overshoot in ~10 s.
+// Settle time between charge-surplus step-ups: long enough for several fresh
+// CAN bursts (the pack repeats 0x356 every ~2 s) to reflect the new load before
+// re-evaluating. The discharge rule still catches any overshoot in ~10 s.
 static constexpr uint32_t BOILER_BATT_RAISE_INTERVAL_MS = 60UL * 1000;  // 1 min
+// Control-side freshness bound on the CAN SoC and measured (0x356) groups.
+// pylontech_can_valid() flips at CAN_STALE_MS (10 s), which is right for the
+// data series but would turn a few dropped bursts into a boiler OFF and a slow
+// climb back. Control tolerates a longer gap: the pack's state cannot move far
+// in this time, and the discharge rule still reacts within BOILER_DISCHARGE_OFF_MS
+// once data is back.
+static constexpr uint32_t BOILER_BATT_MAX_AGE_MS = 30UL * 1000;  // 30 s
 // After the discharge rule steps the boiler down (the panels could not carry the
 // stage it probed), the throttled-surplus path must hold the lower stage at least
 // this long before probing up again. Lets it settle on the sustainable ceiling and
@@ -414,8 +422,21 @@ static void manualHold(uint32_t now) {
   if (updateOverload(s, now)) setBoilerTarget(BOILER_OFF, "AC overload");
 }
 
-// Automatic power regulation from inverter state. Only called while the inverter
-// data is valid and the boiler is in normal operation (no fault, not mid-B-verify).
+// True while the CAN groups the regulation reads (SoC from 0x355, voltage and
+// current from 0x356) have both been seen within BOILER_BATT_MAX_AGE_MS. This is
+// the control-side counterpart of pylontech_can_valid(), with a longer tolerance
+// (see BOILER_BATT_MAX_AGE_MS). A ts of 0 means the group has never arrived.
+static bool batteryDataFresh(uint32_t now) {
+  PylontechCanState can = {};
+  pylontech_can_get(&can);
+  return can.soc_ts_ms != 0 && can.measured_ts_ms != 0 &&
+         (now - can.soc_ts_ms) <= BOILER_BATT_MAX_AGE_MS &&
+         (now - can.measured_ts_ms) <= BOILER_BATT_MAX_AGE_MS;
+}
+
+// Automatic power regulation from inverter and battery state. Only called while
+// both are valid and the boiler is in normal operation (no fault, not
+// mid-B-verify).
 // Snapshots the inverter data once, updates the morning gate and applies the
 // rules in priority order: AC overload (OFF) > battery discharge (one step down)
 // > PV surplus (one step up).
@@ -423,10 +444,10 @@ static void autoRegulate(uint32_t now) {
   InverterState s;
   inverter_get_status(&s);
 
-  // Battery state comes directly from the Pylontech console. tickBoiler() only
-  // calls autoRegulate() while pylontech_data_valid(), so this snapshot is fresh.
-  PylontechState b;
-  pylontech_get_status(&b);
+  // Battery state comes from the Pylontech CAN link. tickBoiler() only calls
+  // autoRegulate() while batteryDataFresh(), so this snapshot is fresh.
+  PylontechCanState b = {};
+  pylontech_can_get(&b);
 
   // Morning gate: block step-ups until BOILER_MORNING_DELAY_MS after PV voltage
   // first rises above BOILER_MORNING_PV_V (~dawn). The gate is re-armed only after
@@ -463,11 +484,11 @@ static void autoRegulate(uint32_t now) {
 
   // Rule 2: sustained battery discharge -> step down one level. A brief spike
   // must not trip it, so require BOILER_DISCHARGE_OFF_MS of continuous discharge.
-  // Pylontech current is signed (+ charge / - discharge). Tolerate a larger discharge
+  // CAN current is signed (+ charge / - discharge). Tolerate a larger discharge
   // while the battery is well charged (see BOILER_DISCHARGE_HIGH_SOC).
   float dischargeLimitA = (b.soc > BOILER_DISCHARGE_HIGH_SOC)
                             ? BOILER_DISCHARGE_HIGH_A : BOILER_DISCHARGE_A;
-  bool discharging = b.current < -dischargeLimitA;
+  bool discharging = b.current_a < -dischargeLimitA;
   if (discharging && !battDischarging) {
     battDischarging = true;
     dischargeStartMs = now;
@@ -490,7 +511,7 @@ static void autoRegulate(uint32_t now) {
     return;
   }
 
-  // SoC bands (battery SOC straight from the Pylontech).
+  // SoC bands (battery SoC straight from the CAN 0x355 frame).
   if (b.soc < BOILER_RAISE_MIN_SOC) {
     // Below the floor: keep the boiler off so the battery can recharge.
     setBoilerTarget(BOILER_OFF, "battery SOC low");
@@ -502,7 +523,7 @@ static void autoRegulate(uint32_t now) {
     // charge power is a direct surplus signal. Step up only when the power flowing
     // into the battery exceeds the extra load the next stage adds (plus the
     // BOILER_STEP_MARGIN reserve). current > 0 means charging. Fast cadence.
-    float chargeW = b.current > 0 ? b.voltage * b.current : 0.0f;
+    float chargeW = b.current_a > 0 ? b.voltage_v * b.current_a : 0.0f;
     bool chargeSurplus =
         (now - lastPowerChangeMs >= BOILER_BATT_RAISE_INTERVAL_MS) &&
         chargeW > STEP_UP_INCREMENT_W[targetPower] * BOILER_STEP_MARGIN;
@@ -517,7 +538,7 @@ static void autoRegulate(uint32_t now) {
     bool throttledSurplus =
         morningPassed &&
         s.pv_input_voltage > BOILER_RAISE_MIN_PV_V &&
-        b.current > -dischargeLimitA &&
+        b.current_a > -dischargeLimitA &&
         (now - lastPowerChangeMs >= BOILER_RAISE_INTERVAL_MS) &&
         (now - lastDischargeStepDownMs >= BOILER_REPROBE_MS);
 
@@ -565,14 +586,15 @@ void tickBoiler() {
   if (boilerFault) return;
 
   // Mains absent at A.COM (no heating possible, no AC for the opto to detect),
-  // tank at its target (virtual thermostat, same semantics as the physical one)
-  // or inverter data stale/lost (comms down for several consecutive polls) —
-  // force the chain back to OFF. Automatic regulation runs only when none holds.
+  // tank at its target (virtual thermostat, same semantics as the physical one),
+  // inverter data stale/lost (comms down for several consecutive polls) or
+  // battery CAN data older than BOILER_BATT_MAX_AGE_MS — force the chain back to
+  // OFF. Automatic regulation runs only when none holds.
   const char* forceOffReason = nullptr;
   if (!isBoilerOn()) forceOffReason = "boiler input off";
   else if (targetReached) forceOffReason = "target temperature reached";
   else if (!inverter_data_valid()) forceOffReason = "inverter data invalid";
-  else if (!pylontech_data_valid()) forceOffReason = "battery data invalid";
+  else if (!batteryDataFresh(now)) forceOffReason = "battery data invalid";
 
   if (forceOffReason) {
     // Cancel any in-flight B-verify wait and steer the chain back to OFF

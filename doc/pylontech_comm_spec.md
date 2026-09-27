@@ -138,9 +138,7 @@ anywhere in them breaks the consensus:
 A cycle that exhausts all attempts without consensus does **not** invalidate the
 data. `g_pylontech_data_valid` is cleared only after
 `PYLONTECH_FAIL_INVALIDATE_THRESHOLD` consecutive failed cycles, so an occasional
-single dropout does not ripple into the consumers — most importantly the boiler
-relay chain, which forces itself off when battery data is invalid
-(`src/relay.cpp`).
+single dropout does not ripple into the consumers (LCD, `/status`, InfluxDB).
 
 ### Constants
 
@@ -199,7 +197,9 @@ and each consumer honours the validity flag independently:
 | `src/main.cpp` — LCD | `ROW_SOC`, `ROW_BATT_POWER` (`voltage × current`) | shows `--` |
 | `src/influx.cpp` | `chajda-battery` measurement, all parsed fields | writes nothing → gap in Grafana instead of zeros |
 | `src/esp_webserver.cpp` | JSON keys `bv`, `bc`, `bs`, `bm`, `bav` | `bav: false` for the web UI |
-| `src/relay.cpp` | boiler auto-regulation input | forces the relay chain off (`"battery data invalid"`) |
+
+Boiler auto-regulation (`src/relay.cpp`) no longer reads this link; it runs on
+the CAN link (`doc/battery_can_spec.md`).
 
 ## Link reliability
 
