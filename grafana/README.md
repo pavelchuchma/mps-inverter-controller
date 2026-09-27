@@ -87,10 +87,13 @@ the meantime, instead of silently discarding their change.
 
 ## Conventions worth keeping
 
-- **Series names carry their source**: `I:` inverter (QPIGS), `B:` battery
-  console, `CAN:` BMS over CAN, `INV:` inverter configuration (QPIRI). The same
-  quantity read over two links appears twice on purpose — the difference between
-  them is the standing check that both are still decoding correctly.
+- **Series names carry their source**: `I:` inverter (QPIGS), `CAN:` BMS over
+  CAN, `INV:` inverter configuration (QPIRI). The same quantity read over two
+  links appears twice on purpose — the difference between them is the standing
+  check that both are still decoding correctly. The battery console series
+  (`B:`, measurement `chajda-battery`) were dropped from the panels once the
+  boiler regulation moved to CAN; the measurement is still written, so a
+  console-vs-CAN check can be re-added as a query at any time.
 - **A gap must look like a gap.** Every panel has `spanNulls: false` and every
   query `createEmpty: true`, so missing data breaks the line instead of being
   bridged by a straight segment across an outage.
