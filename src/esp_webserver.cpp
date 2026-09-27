@@ -17,6 +17,32 @@ extern WebServer server;
 
 static bool pendingRestart = false;
 
+// Request served by the most recent handleClient(); see webserver_take_last_request().
+static String lastRequest;
+
+static void noteRequest() {
+  const char* method = "?";
+  switch (server.method()) {
+    case HTTP_GET: method = "GET"; break;
+    case HTTP_POST: method = "POST"; break;
+    case HTTP_PUT: method = "PUT"; break;
+    case HTTP_DELETE: method = "DELETE"; break;
+    default: break;
+  }
+  lastRequest = String(method) + " " + server.uri() + " from " + server.client().remoteIP().toString();
+}
+
+String webserver_take_last_request() {
+  String s = lastRequest;
+  lastRequest = "";
+  return s;
+}
+
+// Route registration helpers: wrap every handler so noteRequest() runs first.
+static WebServer::THandlerFunction noted(WebServer::THandlerFunction fn) {
+  return [fn]() { noteRequest(); fn(); };
+}
+
 void initWebServer() {
   if (!LittleFS.begin()) {
     Serial.println("LittleFS mount failed");
@@ -563,14 +589,14 @@ static void handleUploadData() {
 }
 
 void webserver_setup_routes() {
-  server.on("/", HTTP_GET, handleRoot);
-  server.on("/status", HTTP_GET, handleStatus);
-  server.on("/can", HTTP_GET, handleCan);
-  server.on("/inv_config", HTTP_GET, handleInvConfig);
-  server.on("/inv_set", HTTP_POST, handleInvSet);
-  server.on("/cmd", HTTP_POST, handleCmdHttp);
-  server.on("/phone_battery", HTTP_POST, handlePhoneBattery);
-  server.on("/upload", HTTP_GET, handleUploadPage);
-  server.on("/upload", HTTP_POST, handleUploadComplete, handleUploadData);
-  server.onNotFound(handleNotFound);
+  server.on("/", HTTP_GET, noted(handleRoot));
+  server.on("/status", HTTP_GET, noted(handleStatus));
+  server.on("/can", HTTP_GET, noted(handleCan));
+  server.on("/inv_config", HTTP_GET, noted(handleInvConfig));
+  server.on("/inv_set", HTTP_POST, noted(handleInvSet));
+  server.on("/cmd", HTTP_POST, noted(handleCmdHttp));
+  server.on("/phone_battery", HTTP_POST, noted(handlePhoneBattery));
+  server.on("/upload", HTTP_GET, noted(handleUploadPage));
+  server.on("/upload", HTTP_POST, noted(handleUploadComplete), handleUploadData);
+  server.onNotFound(noted(handleNotFound));
 }

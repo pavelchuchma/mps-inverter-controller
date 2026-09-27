@@ -533,13 +533,22 @@ static Task tasks[] = {
 void loop() {
   uint32_t t0 = millis();
   server.handleClient();
-  tickBoiler();
   uint32_t t1 = millis();
+  tickBoiler();
+  uint32_t t2 = millis();
 
-  // Log if handleClient takes unusually long (indicates blocking)
+  // Log if handleClient or tickBoiler takes unusually long (indicates blocking)
   uint32_t hdlDur = t1 - t0;
   if (hdlDur > 300) {
-    printWarning("server.handleClient() took %ums", hdlDur);
+    String req = webserver_take_last_request();
+    printWarning("server.handleClient() took %ums (%s)", hdlDur,
+                 req.length() ? req.c_str() : "no request handled");
+  } else {
+    webserver_take_last_request();  // drop the stale entry
+  }
+  uint32_t boilerDur = t2 - t1;
+  if (boilerDur > 300) {
+    printWarning("tickBoiler() took %ums", boilerDur);
   }
 
   // --- Periodic tasks via a simple Task array ---
