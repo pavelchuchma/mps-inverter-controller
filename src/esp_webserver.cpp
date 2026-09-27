@@ -76,6 +76,15 @@ static String makeStatusJson(bool full) {
   InverterState s = {};
   inverter_get_status(&s);
   doc["iv"]  = g_inverter_data_valid;
+  // Battery figures for the main page, from the CAN link (the only battery
+  // telemetry source). Sent even when stale so the UI can grey the row rather
+  // than blank it.
+  PylontechCanState can = {};
+  pylontech_can_get(&can);
+  doc["cav"] = pylontech_can_valid();
+  doc["cbs"] = can.soc;
+  doc["cbv"] = can.voltage_v;
+  doc["cbc"] = can.current_a;   // signed: + charge / - discharge
   doc["pcp"] = s.pv_charging_power;
   doc["lp"]  = s.load_percent;
   doc["th"]  = isnan(g_temp_h) ? JsonVariant() : g_temp_h;
@@ -127,21 +136,13 @@ static String makeStatusJson(bool full) {
   doc["lo"]  = (s.device_status_bits & 0x10) != 0;
   doc["ts"]  = s.ts_ms;
 
-  // ---- Battery (CAN link, the only battery telemetry source) ----
-  // Only the fields the UI actually shows (the main page's SoC, voltage and
-  // current, and the details page's limits rows); the full decoded set stays
-  // on /can, which is the diagnostic endpoint. Sent even when stale so the UI
-  // can grey the row rather than blank it.
-  PylontechCanState can = {};
-  pylontech_can_get(&can);
-  doc["cav"] = pylontech_can_valid();
-  doc["cbs"] = can.soc;
+  // ---- Battery CAN link, details page ----
+  // Only the limits rows; the full decoded set stays on /can, which is the
+  // diagnostic endpoint.
   doc["ccl"] = can.ccl_a;
   doc["dcl"] = can.dcl_a;
   doc["chv"] = can.charge_v;
   doc["soh"] = can.soh;
-  doc["cbv"] = can.voltage_v;
-  doc["cbc"] = can.current_a;   // signed, same convention as bc
 
   // ---- Mobile charger / SoC guard ----
   doc["co"]  = isMobileChargerOn();
