@@ -17,10 +17,17 @@ extern WebServer server;
 
 static bool pendingRestart = false;
 
+// A handleClient() run longer than this is worth a warning.
+static const uint32_t SLOW_REQUEST_MS = 300;
+// /inv_config issues seven synchronous serial queries to the inverter, so a
+// few seconds is its normal cost. It is opened rarely (details, settings).
+static const uint32_t SLOW_INV_CONFIG_MS = 5000;
+
 // Request served by the most recent handleClient(); see webserver_take_last_request().
 static String lastRequest;
+static uint32_t lastRequestSlowMs = SLOW_REQUEST_MS;
 
-static void noteRequest() {
+static void noteRequest(uint32_t slowMs) {
   const char* method = "?";
   switch (server.method()) {
     case HTTP_GET: method = "GET"; break;
@@ -30,17 +37,20 @@ static void noteRequest() {
     default: break;
   }
   lastRequest = String(method) + " " + server.uri() + " from " + server.client().remoteIP().toString();
+  lastRequestSlowMs = slowMs;
 }
 
-String webserver_take_last_request() {
-  String s = lastRequest;
+bool webserver_take_last_request(String& desc, uint32_t& slowMs) {
+  if (lastRequest.length() == 0) return false;
+  desc = lastRequest;
+  slowMs = lastRequestSlowMs;
   lastRequest = "";
-  return s;
+  return true;
 }
 
-// Route registration helpers: wrap every handler so noteRequest() runs first.
-static WebServer::THandlerFunction noted(WebServer::THandlerFunction fn) {
-  return [fn]() { noteRequest(); fn(); };
+// Route registration helper: wrap every handler so noteRequest() runs first.
+static WebServer::THandlerFunction noted(WebServer::THandlerFunction fn, uint32_t slowMs = SLOW_REQUEST_MS) {
+  return [fn, slowMs]() { noteRequest(slowMs); fn(); };
 }
 
 void initWebServer() {
@@ -592,7 +602,7 @@ void webserver_setup_routes() {
   server.on("/", HTTP_GET, noted(handleRoot));
   server.on("/status", HTTP_GET, noted(handleStatus));
   server.on("/can", HTTP_GET, noted(handleCan));
-  server.on("/inv_config", HTTP_GET, noted(handleInvConfig));
+  server.on("/inv_config", HTTP_GET, noted(handleInvConfig, SLOW_INV_CONFIG_MS));
   server.on("/inv_set", HTTP_POST, noted(handleInvSet));
   server.on("/cmd", HTTP_POST, noted(handleCmdHttp));
   server.on("/phone_battery", HTTP_POST, noted(handlePhoneBattery));

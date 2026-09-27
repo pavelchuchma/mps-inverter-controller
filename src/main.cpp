@@ -539,12 +539,12 @@ void loop() {
 
   // Log if handleClient or tickBoiler takes unusually long (indicates blocking)
   uint32_t hdlDur = t1 - t0;
-  if (hdlDur > 300) {
-    String req = webserver_take_last_request();
+  String req;
+  uint32_t slowMs = 300;  // limit when no request was handled; routes may raise it
+  bool handled = webserver_take_last_request(req, slowMs);
+  if (hdlDur > slowMs) {
     printWarning("server.handleClient() took %ums (%s)", hdlDur,
-                 req.length() ? req.c_str() : "no request handled");
-  } else {
-    webserver_take_last_request();  // drop the stale entry
+                 handled ? req.c_str() : "no request handled");
   }
   uint32_t boilerDur = t2 - t1;
   if (boilerDur > 300) {
