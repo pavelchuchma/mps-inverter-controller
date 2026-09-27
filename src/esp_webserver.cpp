@@ -4,7 +4,6 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include "inverter_comm.h"
-#include "pylontech_comm.h"
 #include "pylontech_can.h"
 #include "config.h"
 #include "phone.h"
@@ -76,16 +75,7 @@ static String makeStatusJson(bool full) {
   JsonDocument doc;
   InverterState s = {};
   inverter_get_status(&s);
-  // Console battery values (SoC, voltage, current), independent of the
-  // inverter link. The main page renders the CAN keys below; these stay for
-  // the details page, where they sit next to the CAN values as a cross-check.
-  PylontechState bat = {};
-  pylontech_get_status(&bat);
   doc["iv"]  = g_inverter_data_valid;
-  doc["bav"] = g_pylontech_data_valid;
-  doc["bs"]  = bat.soc;
-  doc["bv"]  = bat.voltage;
-  doc["bc"]  = bat.current;   // signed: + charge / - discharge
   doc["pcp"] = s.pv_charging_power;
   doc["lp"]  = s.load_percent;
   doc["th"]  = isnan(g_temp_h) ? JsonVariant() : g_temp_h;
@@ -137,17 +127,11 @@ static String makeStatusJson(bool full) {
   doc["lo"]  = (s.device_status_bits & 0x10) != 0;
   doc["ts"]  = s.ts_ms;
 
-  // ---- Battery console (RS485) ----
-  doc["bm"]  = bat.basic_status;   // battery mode: Idle / Charge / Discharge
-  doc["bt"]  = bat.temperature;
-  doc["bal"] = bat.system_alarm;
-  doc["slp"] = pylontech_comm_paused();  // console link paused (telnet client connected)
-
-  // ---- Battery CAN link ----
+  // ---- Battery (CAN link, the only battery telemetry source) ----
   // Only the fields the UI actually shows (the main page's SoC, voltage and
-  // current, and the details page's limits and cross-check rows); the full
-  // decoded set stays on /can, which is the diagnostic endpoint. Sent even
-  // when stale so the UI can grey the row rather than blank it.
+  // current, and the details page's limits rows); the full decoded set stays
+  // on /can, which is the diagnostic endpoint. Sent even when stale so the UI
+  // can grey the row rather than blank it.
   PylontechCanState can = {};
   pylontech_can_get(&can);
   doc["cav"] = pylontech_can_valid();

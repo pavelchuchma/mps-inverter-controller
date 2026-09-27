@@ -21,7 +21,6 @@ a field renamed there breaks a panel here, and the two should move together.
 | --- | --- | --- |
 | `chajda-inverter` | QPIGS via `inverter_comm.cpp` | metrics grid (10 s) |
 | `chajda-inverter-config` | QPIRI via `inverter_comm.cpp` | one point per read (5 min) |
-| `chajda-battery` | `pwr` console via `pylontech_comm.cpp` | metrics grid |
 | `chajda-battery-can` | CAN broadcast via `pylontech_can.cpp` | metrics grid + events |
 | `chajda-can-link` | CAN link counters | once per flush (1 min) |
 | `chajda-boiler` | relay state and water temperatures | metrics grid |
@@ -91,9 +90,8 @@ the meantime, instead of silently discarding their change.
   CAN, `INV:` inverter configuration (QPIRI). The same quantity read over two
   links appears twice on purpose — the difference between them is the standing
   check that both are still decoding correctly. The battery console series
-  (`B:`, measurement `chajda-battery`) were dropped from the panels once the
-  boiler regulation moved to CAN; the measurement is still written, so a
-  console-vs-CAN check can be re-added as a query at any time.
+  (`B:`, measurement `chajda-battery`) were dropped from the panels and the
+  measurement is no longer written; its history stays in InfluxDB.
 - **A gap must look like a gap.** Every panel has `spanNulls: false` and every
   query `createEmpty: true`, so missing data breaks the line instead of being
   bridged by a straight segment across an outage.

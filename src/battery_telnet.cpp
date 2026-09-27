@@ -1,5 +1,4 @@
 #include "battery_telnet.h"
-#include "pylontech_comm.h"
 #include "utils.h"
 #include <WiFi.h>
 #include <HardwareSerial.h>
@@ -8,21 +7,17 @@
 
 #define BATTERY_TELNET_PORT 23
 
-// Hard session cap. Matches the 30 min auto-resume fuse used for the web UI
-// serial mute: nobody can reach the hardware, so no debug session may be able
-// to leave the site unregulated indefinitely.
+// Console port serial settings (US5000 console port).
+#define BATTERY_CONSOLE_BAUD 115200
+
+// Hard session cap: nobody can reach the hardware, so a client that vanishes
+// without closing the socket must not be able to hold the port forever.
 #define BATTERY_TELNET_SESSION_MS (30UL * 60UL * 1000UL)
 
-// The pause we hand pylontech_comm outlives the session on purpose. If the two
-// deadlines were equal, a poll cycle could start in the last moment of the
-// session and dump a 'pwr' frame into the operator's terminal.
-#define BATTERY_TELNET_PAUSE_MS (BATTERY_TELNET_SESSION_MS + 60UL * 1000UL)
-
-// How long to wait for the poller to actually let go of the UART. It checks
-// the pause flag once per cycle, so the wait is however much of a consensus
-// read is still in flight — PYLONTECH_MAX_ATTEMPTS * PYLONTECH_READ_WINDOW_MS
-// worst case, 3 s. 8 s leaves margin without hanging the operator for long.
-#define BATTERY_TELNET_HANDOVER_MS 8000
+// A real telnet client opens with a burst of IAC negotiation. We answer none
+// of it, so the first moments of a session are spent discarding it — this is
+// how long that window is, so nothing of the burst reaches the battery console.
+#define BATTERY_TELNET_NEGOTIATION_MS 300
 
 static WiFiServer g_telnet_server(BATTERY_TELNET_PORT);
 
@@ -87,22 +82,17 @@ static void forward_to_console(WiFiClient& client, TelnetFilter& f) {
   }
 }
 
-// Wait until the polling task is off the UART, draining whatever the client
-// sent in the meantime. A real telnet client opens with a burst of IAC
-// negotiation; we answer none of it and this window is where it gets thrown
-// away, so nothing of it reaches the battery console.
-static bool wait_for_uart(WiFiClient& client) {
+// Discard the client's opening negotiation burst (see
+// BATTERY_TELNET_NEGOTIATION_MS). Returns false if the client went away.
+static bool drain_negotiation(WiFiClient& client) {
   uint32_t start = millis();
-  while (millis() - start < BATTERY_TELNET_HANDOVER_MS) {
+  while (millis() - start < BATTERY_TELNET_NEGOTIATION_MS) {
     while (client.available()) client.read();
     if (!client.connected()) return false;
-    if (pylontech_comm_uart_idle()) {
-      while (client.available()) client.read();
-      return true;
-    }
     vTaskDelay(pdMS_TO_TICKS(50));
   }
-  return false;
+  while (client.available()) client.read();
+  return true;
 }
 
 static void run_session(WiFiClient& client) {
@@ -115,28 +105,19 @@ static void run_session(WiFiClient& client) {
   const uint8_t opts[] = {0xFF, 251, 1, 0xFF, 251, 3};  // IAC WILL ECHO, IAC WILL SGA
   client.write(opts, sizeof(opts));
 
-  pylontech_comm_set_paused(true, BATTERY_TELNET_PAUSE_MS);
-
-  if (!wait_for_uart(client)) {
-    if (client.connected()) {
-      client.print("Battery poller did not release the port, aborting\r\n");
-      client.flush();
-      printWarning("[TELNET] poller did not release the UART in %d ms",
-                   BATTERY_TELNET_HANDOVER_MS);
-    }
+  if (!drain_negotiation(client)) {
     client.stop();
-    pylontech_comm_set_paused(false, 0);
     return;
   }
 
-  // Drop whatever the last 'pwr' left in the RX FIFO. collect_response() stops
-  // at the end sentinel, so the bytes the console emitted after it are still
-  // queued and would land in the operator's terminal as garbage.
+  // Drop whatever the console emitted while nobody was listening (its own
+  // periodic output, the tail of a previous session), so it does not land in
+  // the operator's terminal as garbage.
   while (Serial2.available()) Serial2.read();
 
   client.printf("Connected, battery console is yours for %u min\r\n",
                 (unsigned)(BATTERY_TELNET_SESSION_MS / 60000UL));
-  printInfo("[TELNET] console session opened from %s (polling paused)",
+  printInfo("[TELNET] console session opened from %s",
             client.remoteIP().toString().c_str());
 
   TelnetFilter filter = {};
@@ -168,13 +149,12 @@ static void run_session(WiFiClient& client) {
 
   bool timed_out = client.connected();
   if (timed_out) {
-    client.print("\r\nDisconnecting, battery polling resumes\r\n");
+    client.print("\r\nDisconnecting, session cap reached\r\n");
     client.flush();
     vTaskDelay(pdMS_TO_TICKS(100));  // let the last bytes leave before FIN
   }
   client.stop();
-  pylontech_comm_set_paused(false, 0);
-  printInfo("[TELNET] console session closed (%s), polling resumed",
+  printInfo("[TELNET] console session closed (%s)",
             timed_out ? "30 min cap" : "client disconnected");
 }
 
@@ -194,7 +174,8 @@ static void telnet_task(void* arg) {
   }
 }
 
-void battery_telnet_init() {
+void battery_telnet_init(int rx_pin, int tx_pin) {
+  Serial2.begin(BATTERY_CONSOLE_BAUD, SERIAL_8N1, rx_pin, tx_pin);
   xTaskCreatePinnedToCore(
     telnet_task,
     "battery_telnet",

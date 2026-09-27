@@ -136,8 +136,7 @@ const FLOW_MIN_W = 30; // below this a wire is drawn idle
 function render(j) {
   // /status uses short keys to minimize GSM payload; see makeStatusJson() in esp_webserver.cpp.
   const valid = !!j.iv;
-  // Battery figures come from the CAN link (`cav`, `cbs`, `cbv`, `cbc`); the
-  // console keys (`bav`, `bs`, ...) stay in /status for the details page.
+  // Battery figures come from the CAN link (`cav`, `cbs`, `cbv`, `cbc`).
   const battValid = !!j.cav;
   $("app").classList.toggle("stale", !valid);
 

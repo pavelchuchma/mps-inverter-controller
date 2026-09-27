@@ -20,7 +20,9 @@ in `battery_can_spec.md` and is not repeated here.
 3. **The console link stays.** Both links run in parallel and overlap on
    voltage / current / temperature / SoC. That overlap is an asset (see
    [Cross-check](#why-store-the-overlapping-fields-twice)), not redundancy to be
-   removed.
+   removed. *Superseded:* once a season of stored data showed the two links
+   agreeing, every consumer moved to CAN and the console poll was removed; the
+   cross-check sections below describe the state before that.
 4. **Nothing per-frame goes to flash.** `7d0ef34` removed exactly that pattern
    from the console link.
 5. **The frame encoding is settled by the vendor specification.** All seven
@@ -708,7 +710,7 @@ the taper question is answered, because the answer decides what it looks like.
 ## References
 
 - [`battery_can_spec.md`](battery_can_spec.md) — the link: hardware, pins, frame layouts
-- [`pylontech_comm_spec.md`](pylontech_comm_spec.md) — the parallel console link
+- [`pylontech_comm_spec.md`](pylontech_comm_spec.md) — the console link this replaced
 - `include/config.h` — `METRICS_SAMPLE_INTERVAL_MS`, `METRICS_SAMPLES_PER_FLUSH`
 - `src/influx.cpp` — `append_sample()`, `influx_log_event()`
 - `src/relay.cpp` — `autoRegulate()`, the stage-3 consumer

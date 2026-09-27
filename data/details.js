@@ -114,29 +114,26 @@ function render() {
   const c = lastCan || {};
   const cd = c.decoded || {};
   const cl = c.link || {};
-  const inv = !!j.iv, bat = !!j.bav, can = !!j.cav;
+  const inv = !!j.iv, can = !!j.cav;
   const cfg = parseCfg(lastCfg);
   // Source tags: where the value physically comes from, not which endpoint carried it.
-  const INV = "inv", CFG = "inv cfg", CAN = "bat can", CON = "bat console", ESP = "esp", PH = "phone";
+  const INV = "inv", CFG = "inv cfg", CAN = "bat can", ESP = "esp", PH = "phone";
 
   fill("power", [
     row("PV výkon", formatPower(j.pcp), INV, !inv),
     row("AC činný výkon", formatPower(j.aw), INV, !inv),
     row("AC zdánlivý výkon", num(j.ava, 0, " VA"), INV, !inv),
-    row("Výkon baterie (konzole, V·A)", bat && has(j.bv) && has(j.bc) ? formatPower(j.bv * j.bc, true) : "—", CON, !bat),
     row("Výkon baterie (CAN, V·A)", has(cd.voltage_v) && has(cd.current_a) ? formatPower(cd.voltage_v * cd.current_a, true) : "—", CAN, !can),
     row("Zátěž", num(j.lp, 0, " %"), INV, !inv),
   ]);
 
   fill("current", [
-    row("Proud baterie (konzole)", num(j.bc, 1, " A"), CON, !bat),
     row("Proud baterie (CAN)", num(j.cbc, 1, " A"), CAN, !can),
     row("Nabíjecí proud dle měniče", num(j.bca, 0, " A"), INV, !inv),
     row("Vybíjecí proud dle měniče", num(j.bda, 0, " A"), INV, !inv),
   ]);
 
   fill("voltage", [
-    row("Napětí baterie (konzole)", num(j.bv, 2, " V"), CON, !bat),
     row("Napětí baterie (CAN)", num(j.cbv, 2, " V"), CAN, !can),
     row("Napětí baterie dle měniče", num(j.ibv, 2, " V"), INV, !inv),
     row("Požadované nabíjecí napětí (BMS)", num(j.chv, 1, " V"), CAN, !can),
@@ -146,10 +143,8 @@ function render() {
 
   const mode = j.im ? `${j.im} (${j.imn || QMOD_NAMES[j.im] || "?"})` : "—";
   fill("soc", [
-    row("SoC (konzole)", num(j.bs, 0, " %"), CON, !bat),
     row("SoC (CAN)", num(cd.soc, 0, " %"), CAN, !can),
     row("SoH (BMS)", num(j.soh, 0, " %"), CAN, !can),
-    row("Režim baterie", bat && j.bm ? j.bm : "—", CON, !bat),
     row("Režim měniče (QMOD)", mode, INV, !inv),
     row("Výstup měniče (QPIGS b4)", inv && has(j.lo) ? (j.lo ? "ZAPNUT" : "VYPNUT") : "—", INV, !inv),
     row("Stavové bity (QPIGS)", inv && has(j.dsb) ? `${Number(j.dsb).toString(2).padStart(8, "0")} / ${Number(j.asb).toString(2).padStart(3, "0")}` : "—", INV, !inv),
@@ -157,7 +152,6 @@ function render() {
 
   fill("temp", [
     row("Chladič měniče", num(j.ht, 0, " °C"), INV, !inv),
-    row("Baterie (konzole)", num(j.bt, 1, " °C"), CON, !bat),
     row("Baterie (CAN)", num(cd.temp_c, 1, " °C"), CAN, !can),
     row("Boiler H / L", `${num(j.th, 1)} / ${num(j.tl, 1)} °C`, ESP),
   ]);
@@ -197,8 +191,6 @@ function render() {
     ]) } : "—", CAN, !can),
     row("Protection", { html: bitFlags(cd.protection, PROT_BITS) }, CAN, !can),
     row("Alarm", { html: bitFlags(cd.alarm, ALARM_BITS) }, CAN, !can),
-    row("System alarm (konzole)", has(j.bal) ? `0x${Number(j.bal).toString(16)}` : "—", CON, !bat),
-    row("Konzole pozastavena (telnet)", onOff(j.slp), CON),
   ]);
 
   const ph = !!j.phv;
@@ -215,7 +207,7 @@ function render() {
     row("Uptime ESP", has(j.up) ? formatDuration(j.up) : "—", ESP),
     row("Reset reason", j.rrs ? `${j.rrs} (${j.rr})` : (has(j.rr) ? String(j.rr) : "—"), ESP),
     row("Stáří posledního QPIGS", has(j.ts) && has(j.up) ? formatStaleSecs((Number(j.up) - Number(j.ts)) / 1000) : "—", INV, !inv),
-    row("Měnič / konzole / CAN platné", `${inv ? "✓" : "✗"} / ${bat ? "✓" : "✗"} / ${can ? "✓" : "✗"}`, ESP),
+    row("Měnič / CAN platné", `${inv ? "✓" : "✗"} / ${can ? "✓" : "✗"}`, ESP),
   ]);
 
   if (!resetReasonLogged && (has(j.rr) || has(j.rrs))) {

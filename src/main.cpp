@@ -9,7 +9,6 @@
 #include "esp_webserver.h"
 #include "display.h"
 #include "inverter_comm.h"
-#include "pylontech_comm.h"
 #include "pylontech_can.h"
 #include "battery_telnet.h"
 #include "phone.h"
@@ -227,12 +226,9 @@ void setup() {
   // Initialize inverter RS232 communication (background task)
    inverter_comm_init(INVERTER_RX_PIN, INVERTER_TX_PIN);
 
-  // Initialize Pylontech battery console communication (background task)
-  pylontech_comm_init(BATTERY_RX_PIN, BATTERY_TX_PIN);
-
-  // Expose the battery console on telnet :23 for interactive debugging. Must
-  // follow pylontech_comm_init(), which owns Serial2.
-  battery_telnet_init();
+  // Expose the Pylontech battery console (Serial2) on telnet :23 for
+  // interactive diagnostics. All battery telemetry comes from the CAN link.
+  battery_telnet_init(BATTERY_RX_PIN, BATTERY_TX_PIN);
 
   // Start polling phone status endpoint (background task, 30s interval)
   phone_comm_init();

@@ -2,9 +2,13 @@
 
 ## Overview
 
-A second, independent link to the **Pylontech US5000** over its **CAN port**,
-in addition to the existing console-port link described in
-[`pylontech_comm_spec.md`](pylontech_comm_spec.md).
+A link to the **Pylontech US5000** over its **CAN port**. It was added next to
+the console-port link described in
+[`pylontech_comm_spec.md`](pylontech_comm_spec.md) and has since replaced it:
+the console poll was removed once every consumer (boiler regulation, SoC guard,
+LCD, web UI, Grafana) had moved to CAN, and the console UART now serves only the
+telnet bridge. Passages below that describe both links running in parallel are
+from that period.
 
 The battery's CAN port was **unused** — the installed inverter is not compatible
 with the Pylontech BMS protocol, so nothing was connected to it. That made the
@@ -33,13 +37,14 @@ port available for the ESP32, which is now the only other node on it.
   workaround (`PYLONTECH_CONSENSUS_COUNT`) has no CAN equivalent and is not
   needed.
 
-### Why keep the console port
+### What the console port had that CAN does not
 
 CAN does **not** carry `heater_on`, `charge_times`, `total_capacity_mah`, exact
 `cfet_on`/`dfet_on`, per-pack data, or the full 32-bit vendor event bitmasks.
-All of those except `total_capacity_mah` and per-pack data are published to
-InfluxDB from the console link (`influx.cpp:114-123`) and would be lost. Both links therefore run in parallel — see
-[Field coverage](#field-coverage-vs-console-port).
+The console link published those to InfluxDB (`chajda-battery`), and nothing
+displayed them; that measurement stopped when the console poll was removed. They
+remain reachable interactively through the telnet bridge (`pwr`, `bat`, ...) —
+see [Field coverage](#field-coverage-vs-console-port).
 
 ## Topology
 
@@ -571,6 +576,6 @@ BMS protects itself with its own FETs — so this is deliberately deferred.
 - [`battery_can_data_spec.md`](battery_can_data_spec.md) — stage 2: what is parsed, published and stored
 - [AntBmsToCan](https://github.com/dxoverdy/AntBmsToCan/blob/master/AntBmsToCan/AntBmsToCan.ino) — an independent emitter of this profile; corroborates `0x351`/`0x355`/`0x356`, silent on `0x359`/`0x35C`
 - [Eneronix: Pylontech protocol in inverter-battery communication](https://eneronix.com/pylontech-protocol-in-inverter-battery-communication/) — third description of the same three frames; one prose sentence on `0x359`, nothing on `0x35C`
-- `doc/pylontech_comm_spec.md` — the existing console-port link
+- `doc/pylontech_comm_spec.md` — the retired console-port link
 - `doc/rj45_cable_wiring.md` — how CAN shares the 15 m link cable with both RS232 links
 - `doc/ps_rs232_protocol_FULL_ai_ready.txt` — inverter RS232 protocol

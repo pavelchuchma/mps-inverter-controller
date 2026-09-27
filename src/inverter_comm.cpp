@@ -233,10 +233,8 @@ static bool qpiri_num_ok(const String& v) {
 // inverter returns is in doc/todo/_005-store-inverter-charge-config.md.
 //
 // Returns false on a payload that is short, non-numeric or physically
-// implausible, leaving the previous values untouched - the same rule the
-// console link uses (pylontech_comm.cpp parse_pwr_payload), and for the same
-// reason: a corrupted token that slips through would be stored as a
-// configuration change that never happened.
+// implausible, leaving the previous values untouched: a corrupted token that
+// slips through would be stored as a configuration change that never happened.
 static bool parse_qpiri_payload(const String& p) {
   // Index 22 is the highest one read, so anything shorter is a truncated frame
   // or a different model - in which case indices 14 and 22 would quietly point

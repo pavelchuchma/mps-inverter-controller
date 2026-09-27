@@ -1,4 +1,13 @@
-# Pylontech Battery Communication – Specification
+# Pylontech Battery Console – Specification (retired)
+
+> **Status: the polling link described here was removed from the firmware.**
+> All battery telemetry now comes from the CAN link
+> ([`battery_can_spec.md`](battery_can_spec.md)); the console UART is kept
+> only for the telnet bridge (`src/battery_telnet.cpp`, port 23), where the
+> `pwr` command and the frame format below are still what the operator sees.
+> `src/pylontech_comm.cpp` / `include/pylontech_comm.h` and the
+> `chajda-battery` InfluxDB measurement live on in git history. The rest of
+> this document is the specification as it was while the link ran.
 
 ## Overview
 

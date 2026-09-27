@@ -12,7 +12,6 @@
 #include "credentials.h"
 #include "inverter_comm.h"
 #include "pylontech_can.h"
-#include "pylontech_comm.h"
 #include "phone.h"
 #include "relay.h"
 #include "soc_guard.h"
@@ -103,38 +102,10 @@ static void append_sample(String& buf, time_t ts, bool on_grid) {
     }
   }
 
-  // chajda-battery — Pylontech pack status; only when valid, so offline periods
-  // leave gaps in Grafana instead of zeros (same rationale as chajda-inverter).
-  PylontechState bat = {};
-  pylontech_get_status(&bat);
-  if (g_pylontech_data_valid) {
-    String line = "chajda-battery ";
-    bool first = true;
-    appendFloat(line, first, "voltage_v", bat.voltage);
-    appendFloat(line, first, "current_a", bat.current);
-    appendInt(line, first, "power_w", (long)(bat.voltage * bat.current));
-    appendFloat(line, first, "temp_c", bat.temperature);
-    appendInt(line, first, "soc", bat.soc);
-    appendFloat(line, first, "max_voltage_v", bat.max_voltage);
-    appendInt(line, first, "charge_times", bat.charge_times);
-    appendBool(line, first, "cfet", bat.cfet_on);
-    appendBool(line, first, "dfet", bat.dfet_on);
-    appendBool(line, first, "heater", bat.heater_on);
-    appendStr(line, first, "status", bat.basic_status);
-    appendInt(line, first, "bat_events", (long)bat.bat_events);
-    appendInt(line, first, "power_events", (long)bat.power_events);
-    appendInt(line, first, "system_fault", (long)bat.system_fault);
-    appendInt(line, first, "system_alarm", (long)bat.system_alarm);
-    if (!first) {
-      line += tsbuf;
-      buf += line;
-    }
-  }
-
-  // chajda-battery-can — the same pack over the CAN link, plus the fields only
-  // CAN carries (CCL/DCL, SoH, the 0x35C request flags). Gated on
-  // pylontech_can_valid() exactly as the block above is on
-  // g_pylontech_data_valid, so an outage is a gap and not a run of zeros.
+  // chajda-battery-can — the Pylontech pack over the CAN link, the only
+  // battery telemetry source (the console 'pwr' measurement chajda-battery was
+  // retired). Gated on pylontech_can_valid(), so an outage is a gap and not a
+  // run of zeros (same rationale as chajda-inverter).
   //
   // The overlapping fields are deliberately stored twice: the two links are
   // independent, and the difference between them is the standing check that

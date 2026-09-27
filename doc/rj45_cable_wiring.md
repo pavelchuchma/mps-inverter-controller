@@ -8,7 +8,7 @@ All three data links between the ESP32 and the power hardware share a single
 | Link | Peer | Doc |
 |---|---|---|
 | Inverter RS232, 2400 8N1 | inverter RS232 port | [`ps_rs232_protocol_FULL_ai_ready.txt`](ps_rs232_protocol_FULL_ai_ready.txt) |
-| Battery console RS232, 115200 8N1 | Pylontech US5000 `Console` port | [`pylontech_comm_spec.md`](pylontech_comm_spec.md) |
+| Battery console RS232, 115200 8N1 (telnet bridge only) | Pylontech US5000 `Console` port | [`pylontech_comm_spec.md`](pylontech_comm_spec.md) |
 | Battery CAN, 500 kbit/s | Pylontech US5000 `A/CAN` port | [`battery_can_spec.md`](battery_can_spec.md) |
 
 Six signals plus ground fit into the eight conductors, and — as long as each
@@ -150,7 +150,7 @@ The console link runs 115200 baud at ±12 V RS232 swing right next to the CAN
 pair. CAN is differential and CRC-protected, so this should be tolerable, but it
 is the first suspect if CAN error counters climb. The console link itself
 already sees roughly one corrupted byte per 10 kB over this cable, which is why
-`pylontech_comm.cpp` uses consensus voting.
+the (since removed) console poll used consensus voting.
 
 > **Tested, and it is not the culprit.** CAN error counters did climb, so both
 > RS232 links were muted at runtime (`serial_links` on `/cmd`) while the pack
