@@ -37,9 +37,13 @@ limit. The virtual one is meant to sit *below* it in normal use.
   - "reached" becomes true when `Tmin >= T`.
   - "reached" becomes false again when `Tmin <= T - 3` (hysteresis 3 °C, so
     ±1 °C sensor jitter around the set point cannot chatter the relays).
-- While either sensor reads `NAN`, the virtual thermostat is **out of
-  action**: "reached" is cleared and the tank heats up to the physical
-  thermostat, exactly as before this feature. (Holding the last state was
+  - `g_temp_h` / `g_temp_l` are rolling medians of the last 60 readings
+    (one per second), so stray readings cannot cycle the boiler. Each
+    reading is itself the median of 21 ADC samples spread over ~21 ms (a
+    full 50 Hz period). The display, web and InfluxDB show the same medians.
+- While either sensor reads `NAN` (half of the median window or more),
+  the virtual thermostat is **out of action**: "reached" is cleared and the
+  tank heats up to the physical thermostat, exactly as before this feature. (Holding the last state was
   considered and rejected: a sensor dying in "reached" would block heating
   until the next reboot, i.e. a day without hot water, and a target change
   could not clear it. Heating a few degrees higher is the lesser evil, and

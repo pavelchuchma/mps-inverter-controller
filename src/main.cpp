@@ -428,8 +428,9 @@ static void format_temp_str(char* buf, float temp) {
 //   'x' target not reached but the physical thermostat opened
 // '=' wins over 'x', matching the main page (doc/todo/008).
 static void task_update_temperature() {
-  g_temp_l = read_thermistor_temp_c(THERMISTOR_L_PIN);
-  g_temp_h = read_thermistor_temp_c(THERMISTOR_H_PIN);
+  static TempMedian medianL, medianH;
+  g_temp_l = temp_median_push(medianL, read_thermistor_temp_c(THERMISTOR_L_PIN));
+  g_temp_h = temp_median_push(medianH, read_thermistor_temp_c(THERMISTOR_H_PIN));
 
   char h_str[6], l_str[6], buf[17];
   format_temp_str(h_str, g_temp_h);

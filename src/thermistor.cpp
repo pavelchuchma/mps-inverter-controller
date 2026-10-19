@@ -1,4 +1,5 @@
 #include "thermistor.h"
+#include <algorithm>
 #include <cmath>
 
 // Local module constants (for NTC 10k B3950 with 10k divider / 3.3V)
@@ -9,15 +10,16 @@ static constexpr float TH_T0_K          = 298.15f;    // 25 °C in Kelvin
 static constexpr float TH_VSUPPLY_MV    = 3300.0f;    // divider supply voltage (mV)
 
 float read_thermistor_temp_c(int adc_pin) {
-  // Sample in mV and average for stability
-  const int samples = 16;
-  long sumMv = 0;
+  // Spread the samples over a full 50 Hz period and take the median, so single
+  // ADC outliers (WiFi bursts, switching noise) do not shift the result.
+  const int samples = 21;
+  int mv[samples];
   for (int i = 0; i < samples; ++i) {
-    int mv = analogReadMilliVolts(adc_pin);
-    sumMv += mv;
-    delayMicroseconds(500);
+    mv[i] = analogReadMilliVolts(adc_pin);
+    delayMicroseconds(1000);
   }
-  float vout_mv = (float)sumMv / (float)samples;
+  std::nth_element(mv, mv + samples / 2, mv + samples);
+  float vout_mv = (float)mv[samples / 2];
 
   // Guard against rail limits
   if (vout_mv <= 0.1f || vout_mv >= (TH_VSUPPLY_MV - 0.1f)) {
@@ -36,4 +38,19 @@ float read_thermistor_temp_c(int adc_pin) {
   float tK = 1.0f / invT;
   float tC = tK - 273.15f;
   return tC;
+}
+
+float temp_median_push(TempMedian& m, float reading) {
+  m.buf[m.next] = reading;
+  m.next = (m.next + 1) % TEMP_MEDIAN_WINDOW;
+  if (m.count < TEMP_MEDIAN_WINDOW) ++m.count;
+
+  float valid[TEMP_MEDIAN_WINDOW];
+  int n = 0;
+  for (int i = 0; i < m.count; ++i) {
+    if (!isnan(m.buf[i])) valid[n++] = m.buf[i];
+  }
+  if (n * 2 <= m.count) return NAN;
+  std::nth_element(valid, valid + n / 2, valid + n);
+  return valid[n / 2];
 }
