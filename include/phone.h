@@ -15,8 +15,8 @@
 #define PHONE_STATUS_PORT      8080
 #define PHONE_STATUS_PATH      "/status"
 
-// Returns the current phone IP as a dotted-quad string. Stub: hardcoded
-// LAN address. Will later be replaced by dynamic discovery.
+// Returns the phone IP as a dotted-quad string: the WiFi gateway, since the
+// ESP is connected to the phone's hotspot.
 const char* getPhoneIP();
 
 // Parsed status snapshot from http://<phone-ip>:8080/status
